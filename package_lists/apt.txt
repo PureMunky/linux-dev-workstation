@@ -1,0 +1,13 @@
+git
+curl
+wget
+zsh
+vim
+tmux
+build-essential
+python3-pip
+ca-certificates
+apt-transport-https
+software-properties-common
+jq
+htop
