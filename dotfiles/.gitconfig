@@ -1,11 +1,11 @@
 [user]
-  name = Your Name
-  email = your.email@example.com
+	name = Phil Corbett
+	email = corbett.phil@gmail.com
 [core]
-  editor = vim
+	editor = vim
   autocrlf = input
 [init]
-  defaultBranch = main
+	defaultBranch = main
 [alias]
   co = checkout
   br = branch
