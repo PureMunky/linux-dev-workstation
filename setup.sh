@@ -33,4 +33,7 @@ done
 # Install VS Code
 "$SCRIPT_DIR/scripts/setup_vscode.sh"
 
+# Install ArgoCD CLI
+"$SCRIPT_DIR/scripts/install_argocd.sh"
+
 echo "[✔] Setup complete. Restart your terminal to apply changes."
