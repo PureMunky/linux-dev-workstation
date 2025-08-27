@@ -44,4 +44,7 @@ done
 # Install Tilt
 "$SCRIPT_DIR/scripts/setup_tilt.sh"
 
+# Install Node.js and npm via nvm
+"$SCRIPT_DIR/scripts/setup_node.sh"
+
 echo "[✔] Setup complete. Restart your terminal to apply changes."
