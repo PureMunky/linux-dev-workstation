@@ -13,3 +13,7 @@ alias d='dotnet'
 # Add dotnet to PATH
 export DOTNET_ROOT=$HOME/.dotnet
 export PATH=$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools
+
+#add Go to PATH
+export PATH="$(go env GOPATH)/bin:${PATH}"
+

@@ -11,3 +11,4 @@ apt-transport-https
 software-properties-common
 jq
 htop
+golang-go
