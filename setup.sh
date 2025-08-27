@@ -5,12 +5,17 @@
 
 set -e
 
+find . -name "*.sh" -exec chmod +x {} \;
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "[+] Starting Linux dev workstation setup..."
 
 # Update and install core packages
-"$SCRIPT_DIR/scripts/install_packages.sh"
+"$SCRIPT_DIR/scripts/install_apt_packages.sh"
+
+# Install Go packages
+"$SCRIPT_DIR/scripts/install_go_packages.sh"
 
 # Set up dotfiles
 echo "[+] Linking dotfiles..."
@@ -35,5 +40,8 @@ done
 
 # Install ArgoCD CLI
 "$SCRIPT_DIR/scripts/install_argocd.sh"
+
+# Install Tilt
+"$SCRIPT_DIR/scripts/setup_tilt.sh"
 
 echo "[✔] Setup complete. Restart your terminal to apply changes."
