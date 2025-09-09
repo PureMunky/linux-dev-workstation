@@ -47,4 +47,7 @@ done
 # Install Node.js and npm via nvm
 "$SCRIPT_DIR/scripts/setup_node.sh"
 
+# Install global npm packages
+"$SCRIPT_DIR/scripts/install_npm_packages.sh"
+
 echo "[✔] Setup complete. Restart your terminal to apply changes."
