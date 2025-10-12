@@ -50,4 +50,5 @@ done
 # Install global npm packages
 "$SCRIPT_DIR/scripts/install_npm_packages.sh"
 
-echo "[✔] Setup complete. Restart your terminal to apply changes."
+echo "[✔] Setup complete. Restarting shell to apply changes..."
+exec bash
