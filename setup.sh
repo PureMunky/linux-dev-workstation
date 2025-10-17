@@ -1,13 +1,26 @@
 #!/bin/bash
 
-# setup.sh - Main setup entry point for Linux dev workstation
-# Target: Ubuntu + Bash + Kubernetes (.NET project)
+# setup.sh - Main setup entry point for cross-platform dev workstation
+# Target: Ubuntu/macOS + Bash + Kubernetes (.NET project)
 
 set -e
 
 find . -name "*.sh" -exec chmod +x {} \;
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OS="$(uname -s)"
+
+# Detect operating system
+if [[ "$OS" == "Linux" ]]; then
+  OS_NAME="Linux (Ubuntu)"
+  PKG_MGR="APT"
+elif [[ "$OS" == "Darwin" ]]; then
+  OS_NAME="macOS"
+  PKG_MGR="Homebrew"
+else
+  echo "Unsupported operating system: $OS"
+  exit 1
+fi
 
 # Color definitions
 BLUE='\033[0;34m'
@@ -38,14 +51,14 @@ print_step_end() {
 
 echo ""
 print_separator
-echo -e "${BOLD}Starting Linux dev workstation setup...${NC}"
+echo -e "${BOLD}Starting dev workstation setup for ${OS_NAME}...${NC}"
 print_separator
 echo ""
 
 # Update and install core packages
-print_step_start "APT Packages Installation"
+print_step_start "${PKG_MGR} Packages Installation"
 "$SCRIPT_DIR/scripts/install_apt_packages.sh"
-print_step_end "APT Packages Installation"
+print_step_end "${PKG_MGR} Packages Installation"
 
 # Install Go packages
 print_step_start "Go Packages Installation"

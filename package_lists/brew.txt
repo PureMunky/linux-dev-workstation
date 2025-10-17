@@ -1,0 +1,11 @@
+git
+curl
+wget
+zsh
+vim
+tmux
+python3
+jq
+htop
+go
+yamllint
