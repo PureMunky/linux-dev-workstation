@@ -6,6 +6,6 @@ set -e
 
 echo "[+] Installing base packages using go..."
 
-xargs -a "$(dirname "$0")/../package_lists/go.txt" go install
+xargs go install < "$(dirname "$0")/../package_lists/go.txt"
 
 echo "[✔] Base go packages installed."

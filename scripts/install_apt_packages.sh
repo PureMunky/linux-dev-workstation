@@ -10,7 +10,7 @@ OS="$(uname -s)"
 if [[ "$OS" == "Linux" ]]; then
   echo "[+] Installing base packages using apt..."
   sudo apt update
-  xargs -a "$SCRIPT_DIR/../package_lists/apt.txt" sudo apt install -y
+  xargs sudo apt install -y < "$SCRIPT_DIR/../package_lists/apt.txt"
   echo "[✔] Base apt packages installed."
 elif [[ "$OS" == "Darwin" ]]; then
   echo "[+] Installing base packages using brew..."

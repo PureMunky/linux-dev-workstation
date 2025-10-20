@@ -6,6 +6,6 @@ set -e
 
 echo "[+] Installing npm packages..."
 
-xargs -a "$(dirname "$0")/../package_lists/npm.txt" npm install -g
+xargs npm install -g < "$(dirname "$0")/../package_lists/npm.txt"
 
 echo "[✔] Base npm packages installed."
