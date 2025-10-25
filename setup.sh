@@ -97,6 +97,11 @@ print_step_start "VS Code Installation"
 "$SCRIPT_DIR/scripts/setup_vscode.sh"
 print_step_end "VS Code Installation"
 
+# Install WezTerm
+print_step_start "WezTerm Installation"
+"$SCRIPT_DIR/scripts/setup_wezterm.sh"
+print_step_end "WezTerm Installation"
+
 # Install ArgoCD CLI
 print_step_start "ArgoCD CLI Installation"
 "$SCRIPT_DIR/scripts/install_argocd.sh"

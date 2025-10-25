@@ -44,6 +44,7 @@ Scripts can be run independently if needed (all scripts are cross-platform):
 - `./scripts/setup_dotnet.sh` - .NET SDK (apt on Linux, brew cask on macOS)
 - `./scripts/setup_docker.sh` - Docker Engine (Linux) or Docker Desktop (macOS)
 - `./scripts/setup_vscode.sh` - Visual Studio Code setup
+- `./scripts/setup_wezterm.sh` - WezTerm terminal emulator
 - `./scripts/install_argocd.sh` - ArgoCD CLI
 - `./scripts/setup_tilt.sh` - Tilt development tool
 - `./scripts/setup_node.sh` - Node.js via nvm (cross-platform)
@@ -71,12 +72,17 @@ Package lists are maintained in `package_lists/`:
 - **Linux**: Installs via Microsoft's apt repository
 - **macOS**: Installs via Homebrew cask
 
+**WezTerm:**
+- **Linux**: Installs via official WezTerm apt repository
+- **macOS**: Installs via Homebrew cask
+
 **Binary Tools** (kubectl, k9s, kind, argocd, kubeval):
 - Automatically downloads the correct binary for the detected OS and architecture (amd64/arm64)
 
 ## Development Environment
 
 The setup configures a comprehensive development environment with:
+- Terminal emulator (WezTerm with custom configuration)
 - Kubernetes development tools (kubectl, k9s, kind, helm)
 - Container development (Docker Engine/Desktop, Tilt)
 - Multiple language runtimes (Go, .NET, Node.js)
