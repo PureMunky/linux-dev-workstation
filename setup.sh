@@ -60,6 +60,11 @@ print_step_start "${PKG_MGR} Packages Installation"
 "$SCRIPT_DIR/scripts/install_apt_packages.sh"
 print_step_end "${PKG_MGR} Packages Installation"
 
+# Configure automatic system updates
+print_step_start "Automatic System Updates Configuration"
+"$SCRIPT_DIR/scripts/setup_auto_updates.sh"
+print_step_end "Automatic System Updates Configuration"
+
 # Install Go packages
 print_step_start "Go Packages Installation"
 "$SCRIPT_DIR/scripts/install_go_packages.sh"

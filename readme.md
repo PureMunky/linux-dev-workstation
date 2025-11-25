@@ -27,6 +27,7 @@ find . -name "*.sh" -exec chmod +x {} \;
 - **Languages**: .NET SDK, Go, Node.js (via nvm)
 - **IDE**: Visual Studio Code with extensions
 - **CLI Tools**: ArgoCD CLI, various Go tools
+- **System Maintenance**: Automatic security updates (unattended-upgrades on Linux, softwareupdate on macOS)
 
 ### Platform-Specific Installation
 - **Linux (Ubuntu)**: Uses `apt` package manager + direct binary downloads
@@ -43,6 +44,7 @@ You can run individual setup scripts if you only need specific tools:
 
 ```bash
 ./scripts/install_apt_packages.sh  # Base packages (apt/brew)
+./scripts/setup_auto_updates.sh    # Automatic system updates
 ./scripts/setup_docker.sh          # Docker
 ./scripts/setup_kubernetes.sh      # Kubernetes tools
 ./scripts/setup_dotnet.sh          # .NET SDK
