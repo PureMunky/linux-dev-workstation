@@ -7,12 +7,17 @@ export LSCOLORS=GxFxCxDxBxegedabagaced
 # Custom aliases
 alias ll='ls -alF'
 alias gs='git status'
+alias ga='git add'
+alias gd='git diff'
 alias gac='git add . && git commit'
-alias gp='git push'
+alias gps='git push'
+alias gpu='git pull'
 alias k='kubectl'
 alias kp='kubectl get pods -A'
 alias d='dotnet'
-alias c='claude'
+alias cl='claude'
+alias co='code .'
+alias cls='clear'
 
 # Add dotnet to PATH
 export DOTNET_ROOT=$HOME/.dotnet
