@@ -5,6 +5,7 @@ export CLICOLOR=1
 export LSCOLORS=GxFxCxDxBxegedabagaced
 
 # Custom aliases
+alias l='~/workspace/agent-test/tools/launcher/launcher.sh'
 alias ll='ls -alF'
 alias gs='git status'
 alias ga='git add'
@@ -18,6 +19,8 @@ alias d='dotnet'
 alias cl='claude'
 alias co='code .'
 alias cls='clear'
+alias ralph='~/workspace/linux-dev-workstation/commands/ralph'
+alias cld='~/workspace/linux-dev-workstation/commands/claude-sandboxed'
 
 # Add dotnet to PATH
 export DOTNET_ROOT=$HOME/.dotnet

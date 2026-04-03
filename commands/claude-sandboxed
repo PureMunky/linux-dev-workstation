@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# ============================================================
+# claude-sandboxed - Ephemeral Claude CLI sandbox
+#
+# Each run starts fresh with:
+# - A clean copy of ~/.claude (for auth/settings)
+# - Only the current directory mounted
+# - Complete wipe on exit
+#
+# Usage:
+#   cld                     # Interactive mode
+#   cld "prompt"            # Quick prompt
+#   cld --print "prompt"    # Non-interactive output
+# ============================================================
+
+set -euo pipefail
+
+IMAGE_NAME="claude-cli-sandbox"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+# ── Create ephemeral sandbox directory ───────────────────────
+SANDBOX_DIR=$(mktemp -d -t claude-sandbox.XXXXXX)
+
+# Clean up on exit (always wipe the sandbox)
+# Use docker to remove files that may be owned by the container user
+cleanup() {
+  docker run --rm -v "$SANDBOX_DIR:/cleanup" alpine rm -rf /cleanup 2>/dev/null || true
+  rmdir "$SANDBOX_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# ── Copy essential ~/.claude config to ephemeral sandbox ─────
+if [[ -d "$HOME/.claude" ]]; then
+  # Copy only essential files, skip problematic directories
+  # and ignore permission errors
+  for item in "$HOME/.claude"/*; do
+    [[ -e "$item" ]] || continue
+    name=$(basename "$item")
+
+    # Skip known problematic directories
+    case "$name" in
+      projects|logs)
+        continue
+        ;;
+    esac
+
+    cp -r "$item" "$SANDBOX_DIR/" 2>/dev/null || true
+  done
+
+  # Ensure essential auth files are copied
+  cp "$HOME/.claude/.credentials.json" "$SANDBOX_DIR/" 2>/dev/null || true
+  cp "$HOME/.claude/settings.json" "$SANDBOX_DIR/" 2>/dev/null || true
+
+  # Copy ~/.claude.json (account info, onboarding state, preferences)
+  cp "$HOME/.claude.json" "$SANDBOX_DIR/claude.json" 2>/dev/null || true
+
+  # Make files readable by container user (different UID than host user)
+  chmod -R o+rwX "$SANDBOX_DIR" 2>/dev/null || true
+
+  echo "[sandbox] Created ephemeral session" >&2
+fi
+
+# ── Build image if needed ────────────────────────────────────
+if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+  echo "[sandbox] Building container image (first run only)..." >&2
+  docker build -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile.claude" "$SCRIPT_DIR" >&2
+fi
+
+# ── Determine docker run flags ───────────────────────────────
+DOCKER_FLAGS="--rm"
+
+if [[ -t 0 ]] && [[ -t 1 ]]; then
+  DOCKER_FLAGS="$DOCKER_FLAGS -it"
+else
+  DOCKER_FLAGS="$DOCKER_FLAGS -i"
+fi
+
+# ── Run Claude in ephemeral container ────────────────────────
+echo "[sandbox] Working directory: $(pwd)" >&2
+
+docker run $DOCKER_FLAGS \
+  -v "$(pwd):/workspace" \
+  -v "$SANDBOX_DIR:/home/claude/.claude" \
+  -v "$SANDBOX_DIR/claude.json:/home/claude/.claude.json" \
+  -w /workspace \
+  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+  -e CLAUDE_CODE_USE_BEDROCK="${CLAUDE_CODE_USE_BEDROCK:-}" \
+  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  -e AWS_REGION="${AWS_REGION:-}" \
+  -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+  -e TERM="${TERM:-xterm-256color}" \
+  "$IMAGE_NAME" \
+  claude --dangerously-skip-permissions "$@"
+
+echo "[sandbox] Session ended, ephemeral data wiped" >&2

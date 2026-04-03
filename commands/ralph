@@ -1,0 +1,478 @@
+#!/usr/bin/env bash
+# ============================================================
+# ralph - REPL-like Agentic Loop for Hands-free Production
+# Read → Analyze → Loop → Produce
+#
+# Runs autonomously until Claude marks the project as done.
+# Each iteration uses fresh context (to prevent hallucinations)
+# but includes the current project state in the prompt.
+#
+# Usage:
+#   ralph "build me a CLI todo app in Python"
+#   ralph -f prompt.txt
+#   ralph                         # interactive prompt
+#
+# Prompt file: Place a .ralph-prompt file in your project
+# directory to automatically use it as the initial prompt.
+# ============================================================
+
+set -euo pipefail
+
+# ── Default Config ───────────────────────────────────────────
+RALPH_DIR="${RALPH_DIR:-./ralph-output}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-10}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-}"
+CLAUDE_TIMEOUT="${CLAUDE_TIMEOUT:-600}"  # 10 minute default (longer for complex iterations)
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+CLAUDE_CMD="${CLAUDE_CMD:-claude}"  # Use native claude by default (has path validation for security)
+PROMPT_FILE=""
+INTERACTIVE=false
+USE_GIT=true
+
+# Colors
+RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+
+# ── Usage ────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+${BOLD}ralph${RESET} - REPL-like Agentic Loop for Hands-free Production
+
+${BOLD}USAGE:${RESET}
+    ralph [OPTIONS] [PROMPT]
+
+${BOLD}OPTIONS:${RESET}
+    -h, --help          Show this help message
+    -o, --output DIR    Output directory (default: ./ralph-output)
+    -m, --max-iter N    Maximum iterations (default: 10)
+    -f, --file FILE     Read initial prompt from file
+    --model MODEL       Claude model to use
+    --interactive       Prompt for feedback after each iteration
+    --sandbox           Run claude in Docker container (requires setup)
+    --no-git            Disable git tracking of iterations
+    --timeout SECS      Timeout for Claude calls (default: 600)
+
+${BOLD}PROMPT FILE:${RESET}
+    If a .ralph-prompt file exists in the current directory,
+    it will be used as the default prompt (unless overridden).
+
+${BOLD}ENVIRONMENT VARIABLES:${RESET}
+    RALPH_DIR           Output directory
+    MAX_ITERATIONS      Maximum loop iterations
+    CLAUDE_MODEL        Model to use
+    CLAUDE_CMD          Claude command to use
+    CLAUDE_TIMEOUT      Timeout in seconds
+
+${BOLD}EXAMPLES:${RESET}
+    ralph "build a CLI todo app in Python"
+    ralph -o ./myproject "create a REST API"
+    ralph -f requirements.txt --max-iter 20
+    ralph --interactive  # for manual feedback each iteration
+
+${BOLD}DESIGN:${RESET}
+    Each iteration uses FRESH context (no session persistence).
+    This prevents Claude from hallucinating over long sessions.
+    The current project state is included in each prompt.
+
+EOF
+  exit 0
+}
+
+# ── Parse Arguments ──────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      ;;
+    -o|--output)
+      RALPH_DIR="$2"
+      shift 2
+      ;;
+    -m|--max-iter)
+      MAX_ITERATIONS="$2"
+      shift 2
+      ;;
+    -f|--file)
+      PROMPT_FILE="$2"
+      shift 2
+      ;;
+    --model)
+      CLAUDE_MODEL="$2"
+      shift 2
+      ;;
+    --interactive)
+      INTERACTIVE=true
+      shift
+      ;;
+    --sandbox)
+      CLAUDE_CMD="$SCRIPT_DIR/claude-sandboxed"
+      shift
+      ;;
+    --no-git)
+      USE_GIT=false
+      shift
+      ;;
+    --timeout)
+      CLAUDE_TIMEOUT="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo -e "${RED}Unknown option: $1${RESET}" >&2
+      echo "Use --help for usage information." >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Remaining args are the prompt
+INITIAL_PROMPT="${*:-}"
+
+# ── File paths (depend on RALPH_DIR) ─────────────────────────
+LOG_FILE="${RALPH_DIR}/.ralph.log"
+HISTORY_FILE="${RALPH_DIR}/.ralph_history.md"
+
+# ── Helpers ──────────────────────────────────────────────────
+log()   { echo -e "${CYAN}[ralph]${RESET} $*" | tee -a "$LOG_FILE"; }
+warn()  { echo -e "${YELLOW}[warn]${RESET}  $*" | tee -a "$LOG_FILE"; }
+err()   { echo -e "${RED}[error]${RESET} $*" | tee -a "$LOG_FILE"; exit 1; }
+header(){ echo -e "\n${BOLD}${GREEN}══════════════════════════════════════════${RESET}"; echo -e "${BOLD}${GREEN}  $*${RESET}"; echo -e "${BOLD}${GREEN}══════════════════════════════════════════${RESET}\n"; }
+
+require_cmd() { command -v "$1" &>/dev/null || err "'$1' not found. Please install it."; }
+
+# ── Dependency check ─────────────────────────────────────────
+if [[ ! -x "$CLAUDE_CMD" ]] && ! command -v "$CLAUDE_CMD" &>/dev/null; then
+  err "Claude command not found: $CLAUDE_CMD"
+fi
+require_cmd jq
+if [[ "$CLAUDE_CMD" == *"sandboxed"* ]]; then
+  require_cmd docker
+fi
+
+# ── Setup output dir ─────────────────────────────────────────
+mkdir -p "$RALPH_DIR"
+touch "$LOG_FILE"
+
+# ── Git initialization ───────────────────────────────────────
+init_git() {
+  if [[ "$USE_GIT" == "true" ]] && command -v git &>/dev/null; then
+    if [[ ! -d "$RALPH_DIR/.git" ]]; then
+      git -C "$RALPH_DIR" init -q 2>/dev/null || true
+      cat > "$RALPH_DIR/.gitignore" <<'GITIGNORE'
+.ralph.log
+GITIGNORE
+      git -C "$RALPH_DIR" add .gitignore 2>/dev/null || true
+      git -C "$RALPH_DIR" commit -q -m "Initialize ralph project" 2>/dev/null || true
+      log "Initialized git repository for version tracking"
+    fi
+  fi
+}
+
+commit_iteration() {
+  local iteration="$1"
+  local summary="$2"
+  if [[ "$USE_GIT" == "true" ]] && [[ -d "$RALPH_DIR/.git" ]]; then
+    git -C "$RALPH_DIR" add -A 2>/dev/null || true
+    git -C "$RALPH_DIR" commit -q -m "Iteration $iteration: $summary" 2>/dev/null || true
+  fi
+}
+
+# ── Get current project state ────────────────────────────────
+get_project_state() {
+  # Returns a summary of current files for context
+  local state=""
+
+  if [[ -d "$RALPH_DIR" ]]; then
+    # List all files (excluding ralph metadata)
+    local files
+    files=$(find "$RALPH_DIR" -type f \
+      -not -name ".ralph*" \
+      -not -path "*/.git/*" \
+      2>/dev/null | sort)
+
+    if [[ -n "$files" ]]; then
+      state="Current project files:\n"
+      while IFS= read -r file; do
+        local rel_path="${file#$RALPH_DIR/}"
+        local size
+        size=$(wc -c < "$file" 2>/dev/null || echo "0")
+        state+="- $rel_path ($size bytes)\n"
+      done <<< "$files"
+
+      # Include content of key files (README, main files)
+      for file in $files; do
+        local rel_path="${file#$RALPH_DIR/}"
+        local ext="${file##*.}"
+
+        # Include small files and important ones
+        local size
+        size=$(wc -c < "$file" 2>/dev/null || echo "0")
+        if [[ $size -lt 10000 ]] || [[ "$rel_path" == "README.md" ]] || [[ "$rel_path" == *"main"* ]]; then
+          state+="\n--- $rel_path ---\n"
+          state+=$(cat "$file" 2>/dev/null || echo "(unable to read)")
+          state+="\n"
+        fi
+      done
+    fi
+  fi
+
+  echo -e "$state"
+}
+
+# ── READ: get initial prompt ─────────────────────────────────
+header "RALPH — Autonomous Build Loop"
+
+# Priority: CLI args > --file > .ralph-prompt > interactive
+if [[ -z "$INITIAL_PROMPT" ]]; then
+  if [[ -n "$PROMPT_FILE" ]]; then
+    [[ -f "$PROMPT_FILE" ]] || err "Prompt file not found: $PROMPT_FILE"
+    INITIAL_PROMPT=$(cat "$PROMPT_FILE")
+    log "Read prompt from: $PROMPT_FILE"
+  elif [[ -f ".ralph-prompt" ]]; then
+    INITIAL_PROMPT=$(cat ".ralph-prompt")
+    log "Read prompt from: .ralph-prompt"
+  else
+    echo -e "${BOLD}Describe the software you want to build:${RESET}"
+    read -r -p "→ " INITIAL_PROMPT
+  fi
+fi
+
+[[ -z "$INITIAL_PROMPT" ]] && err "No prompt provided."
+
+# Initialize git for new sessions
+init_git
+
+# ── Seed the history ─────────────────────────────────────────
+cat > "$HISTORY_FILE" <<EOF
+# Ralph Session — $(date)
+
+## Goal
+$INITIAL_PROMPT
+
+---
+EOF
+
+log "Project directory : $RALPH_DIR"
+log "Max iterations    : $MAX_ITERATIONS"
+log "Claude command    : $CLAUDE_CMD"
+log "Timeout           : ${CLAUDE_TIMEOUT}s"
+log "Interactive       : $INTERACTIVE"
+[[ -n "$CLAUDE_MODEL" ]] && log "Model             : $CLAUDE_MODEL"
+log "Initial prompt    : ${INITIAL_PROMPT:0:100}..."
+echo ""
+log "Starting autonomous loop..."
+echo ""
+
+# ── Build the system prompt ──────────────────────────────────
+SYSTEM_PROMPT='You are an expert software engineer operating inside an agentic build loop called RALPH.
+
+Your job:
+1. Generate a complete, runnable software project based on the user prompt.
+2. Output ONLY a JSON object — no prose before or after it.
+
+JSON schema:
+{
+  "summary": "one-sentence description of what you built/changed",
+  "done": false,
+  "files": [
+    { "path": "relative/path/to/file.ext", "content": "full file content as a string" }
+  ],
+  "next_step": "what you will do in the next iteration (be specific)"
+}
+
+Rules:
+- "path" is always relative (e.g. "src/main.py", "README.md").
+- "content" must be the complete file — never truncated.
+- Set "done": true ONLY when the project is genuinely complete, tested mentally, and production-ready.
+- Each iteration should make meaningful progress. Do not repeat work.
+- Include ALL files needed (updated and unchanged) - the system replaces all files each iteration.
+- Include a README.md with usage instructions.
+- Escape all special characters inside JSON strings properly.
+- If you see existing project state, build upon it — do not start over unless necessary.'
+
+# ── LOOP ─────────────────────────────────────────────────────
+iteration=0
+
+while [[ $iteration -lt $MAX_ITERATIONS ]]; do
+  ((++iteration))  # Pre-increment avoids set -e exit when iteration was 0
+  header "Iteration $iteration / $MAX_ITERATIONS"
+
+  # Get current project state to include in prompt
+  PROJECT_STATE=$(get_project_state)
+
+  # Build the user message for this iteration
+  if [[ $iteration -eq 1 ]]; then
+    USER_MSG="Build this project: $INITIAL_PROMPT"
+  else
+    USER_MSG="Continue building the project. Goal: $INITIAL_PROMPT
+
+$PROJECT_STATE
+
+What's the next step to complete this project? Make meaningful progress."
+  fi
+
+  log "Sending to Claude (iteration $iteration)..."
+
+  # ── ANALYZE: call claude CLI with timeout (fresh context each time) ──
+  CLAUDE_ARGS=(--system "$SYSTEM_PROMPT" --print)
+  [[ -n "$CLAUDE_MODEL" ]] && CLAUDE_ARGS+=(--model "$CLAUDE_MODEL")
+
+  if ! RAW_RESPONSE=$(timeout "$CLAUDE_TIMEOUT" "$CLAUDE_CMD" "${CLAUDE_ARGS[@]}" "$USER_MSG" 2>>"$LOG_FILE"); then
+    exit_code=$?
+    if [[ $exit_code -eq 124 ]]; then
+      warn "Claude CLI timed out after ${CLAUDE_TIMEOUT}s"
+      log "Retrying iteration $iteration..."
+      ((iteration--))
+      continue
+    else
+      err "Claude CLI call failed (exit code: $exit_code). Check $LOG_FILE."
+    fi
+  fi
+
+  # ── Extract JSON from response ─────────────────────────
+  CLEAN_RESPONSE=$(echo "$RAW_RESPONSE" | sed 's/^```json//;s/^```//' | sed '/^```/d')
+
+  # If that doesn't work, try to extract just the JSON object
+  if ! echo "$CLEAN_RESPONSE" | jq empty 2>/dev/null; then
+    CLEAN_RESPONSE=$(echo "$RAW_RESPONSE" | sed -n '/{/,/}/p' | tr '\n' ' ')
+  fi
+
+  # Validate JSON
+  if ! echo "$CLEAN_RESPONSE" | jq empty 2>/dev/null; then
+    warn "Claude returned invalid JSON on iteration $iteration. Retrying..."
+    echo "$RAW_RESPONSE" >> "$LOG_FILE"
+    ((iteration--))
+    sleep 2
+    continue
+  fi
+
+  SUMMARY=$(echo "$CLEAN_RESPONSE" | jq -r '.summary // "no summary"')
+  DONE=$(echo "$CLEAN_RESPONSE"    | jq -r '.done // false')
+  NEXT=$(echo "$CLEAN_RESPONSE"    | jq -r '.next_step // .next_suggestion // ""')
+
+  log "Summary: $SUMMARY"
+  [[ -n "$NEXT" ]] && log "Next: $NEXT"
+
+  # ── PRODUCE: write files ───────────────────────────────
+  FILE_COUNT=$(echo "$CLEAN_RESPONSE" | jq '.files | length')
+
+  if [[ "$FILE_COUNT" -eq 0 ]]; then
+    warn "No files in response - retrying..."
+    ((iteration--))
+    sleep 2
+    continue
+  fi
+
+  log "Writing $FILE_COUNT file(s)..."
+
+  echo "$CLEAN_RESPONSE" | jq -c '.files[]' | while IFS= read -r file_obj; do
+    REL_PATH=$(echo "$file_obj" | jq -r '.path')
+    CONTENT=$(echo "$file_obj"  | jq -r '.content')
+
+    # Security: prevent path traversal attacks
+    if [[ "$REL_PATH" == /* ]] || [[ "$REL_PATH" == ../* ]] || [[ "$REL_PATH" == */../* ]]; then
+      warn "Skipping unsafe path: $REL_PATH"
+      continue
+    fi
+
+    DEST="$RALPH_DIR/$REL_PATH"
+    mkdir -p "$(dirname "$DEST")"
+    printf '%s' "$CONTENT" > "$DEST"
+    log "  wrote → $REL_PATH"
+  done
+
+  # Commit this iteration
+  commit_iteration "$iteration" "$SUMMARY"
+
+  # Append to session history
+  cat >> "$HISTORY_FILE" <<EOF
+
+## Iteration $iteration — $(date +%H:%M:%S)
+**Summary:** $SUMMARY
+**Files written:** $FILE_COUNT
+**Next step:** $NEXT
+**Done:** $DONE
+
+---
+EOF
+
+  # Show tree of output
+  echo ""
+  if command -v tree &>/dev/null; then
+    tree "$RALPH_DIR" --noreport -I ".ralph*|.git"
+  else
+    find "$RALPH_DIR" -type f -not -path '*/.ralph*' -not -path '*/.git/*' | sort
+  fi
+  echo ""
+
+  # ── Done? ──────────────────────────────────────────────
+  if [[ "$DONE" == "true" ]]; then
+    header "Project Complete!"
+    log "Claude marked the project as done after $iteration iteration(s)."
+    break
+  fi
+
+  # ── Interactive mode: ask for feedback ─────────────────
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    echo -e "${BOLD}Next step:${RESET} $NEXT"
+    echo ""
+    echo -e "${CYAN}Options:${RESET}"
+    echo "  [Enter]     → auto-continue"
+    echo "  [your text] → override next step"
+    echo "  done        → accept current state and exit"
+    echo "  abort       → exit"
+    echo ""
+    read -r -p "→ " feedback
+
+    case "$feedback" in
+      done)
+        header "Accepted!"
+        log "User accepted project at iteration $iteration."
+        break
+        ;;
+      abort)
+        warn "Aborted by user at iteration $iteration."
+        exit 0
+        ;;
+      "")
+        log "Auto-continuing..."
+        ;;
+      *)
+        # User provided custom feedback - append to initial prompt context
+        INITIAL_PROMPT="$INITIAL_PROMPT. Additional requirement: $feedback"
+        log "Added user feedback: $feedback"
+        ;;
+    esac
+  else
+    # Non-interactive: brief pause then continue
+    log "Continuing to next iteration..."
+    sleep 1
+  fi
+done
+
+if [[ $iteration -ge $MAX_ITERATIONS ]]; then
+  warn "Reached max iterations ($MAX_ITERATIONS). Stopping."
+fi
+
+header "Session Complete"
+log "Output directory : $RALPH_DIR"
+log "Total iterations : $iteration"
+log "Session log      : $LOG_FILE"
+log "Session history  : $HISTORY_FILE"
+if [[ "$USE_GIT" == "true" ]] && [[ -d "$RALPH_DIR/.git" ]]; then
+  log "Git commits      : $(git -C "$RALPH_DIR" rev-list --count HEAD 2>/dev/null || echo 0)"
+fi
+echo ""
+echo -e "${BOLD}To explore your project:${RESET}"
+echo -e "  cd $RALPH_DIR"
+if [[ "$USE_GIT" == "true" ]] && [[ -d "$RALPH_DIR/.git" ]]; then
+  echo -e "  git log --oneline    # view iteration history"
+  echo -e "  git diff HEAD~1      # see last changes"
+fi
+echo ""
