@@ -21,6 +21,9 @@ alias co='code .'
 alias cls='clear'
 alias ralph='~/workspace/linux-dev-workstation/commands/ralph'
 alias cld='~/workspace/linux-dev-workstation/commands/claude-sandboxed'
+alias cld-rebuild='~/workspace/linux-dev-workstation/commands/claude-sandboxed-rebuild'
+alias cldt='cld --tmux'
+alias clds='cld --tmux-list'
 
 # Add dotnet to PATH
 export DOTNET_ROOT=$HOME/.dotnet
@@ -59,3 +62,6 @@ function k8s_prompt_info() {
 
 # Set the prompt
 PS1='\[\033[01;32m\]\w\[\033[01;33m\]$(git_prompt_info)\[\033[01;34m\]$(k8s_prompt_info)\[\033[00m\]\n$ '
+
+# Created by `pipx` on 2026-04-05 16:27:16
+export PATH="$PATH:/home/philcorbett/.local/bin"

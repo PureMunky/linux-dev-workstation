@@ -11,12 +11,112 @@
 #   cld                     # Interactive mode
 #   cld "prompt"            # Quick prompt
 #   cld --print "prompt"    # Non-interactive output
+#   cld --shell             # Drop into a bash shell in the sandbox
+#   cld --ssh               # Mount ~/.ssh (read-only) and forward SSH agent
+#   cld --ssh "prompt"      # Combine with any other args
+#
+# Tmux session management:
+#   cld --tmux              # Run in tmux session (auto-named from directory)
+#   cld --tmux myname       # Run in tmux session named cld-myname
+#   cld --tmux-list         # List all cld tmux sessions
+#   cld --tmux-attach name  # Attach to existing session
+#   cld --tmux-kill name    # Kill a session
+#   cld --tmux-kill-all     # Kill all cld sessions
 # ============================================================
 
 set -euo pipefail
 
 IMAGE_NAME="claude-cli-sandbox"
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SESSION_PREFIX="cld"
+
+# ── Tmux session management ─────────────────────────────────
+sanitize_name() { echo "$1" | tr './:' '-'; }
+
+tmux_attach_or_switch() {
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux switch-client -t "$1"
+  else
+    tmux attach-session -t "$1"
+  fi
+}
+
+tmux_list() {
+  echo "Active cld sessions:"
+  echo "---"
+  tmux list-sessions \
+    -F "  #{session_name}  (created #{t:session_created})  #{?session_attached,ATTACHED,detached}" \
+    2>/dev/null | grep "  ${SESSION_PREFIX}-" || echo "  (none)"
+}
+
+SHELL_MODE=false
+SSH_MODE=false
+
+# ── Parse flags (loop so --ssh can combine with others) ────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --shell)
+      SHELL_MODE=true
+      shift
+      ;;
+    --ssh)
+      SSH_MODE=true
+      shift
+      ;;
+    --tmux-list)
+      tmux_list
+      exit 0
+      ;;
+    --tmux-kill-all)
+      tmux list-sessions -F '#{session_name}' 2>/dev/null \
+        | grep "^${SESSION_PREFIX}-" \
+        | while read -r s; do tmux kill-session -t "$s"; echo "Killed $s"; done
+      exit 0
+      ;;
+    --tmux-kill)
+      [[ -z "${2:-}" ]] && { echo "Error: session name required" >&2; exit 1; }
+      FULL="${SESSION_PREFIX}-$(sanitize_name "$2")"
+      tmux kill-session -t "$FULL" 2>/dev/null \
+        && echo "Killed session: $FULL" \
+        || echo "Session not found: $FULL" >&2
+      exit 0
+      ;;
+    --tmux-attach)
+      [[ -z "${2:-}" ]] && { echo "Error: session name required" >&2; exit 1; }
+      FULL="${SESSION_PREFIX}-$(sanitize_name "$2")"
+      tmux_attach_or_switch "$FULL"
+      exit $?
+      ;;
+    --tmux)
+      TMUX_SESSION_NAME="${2:-$(basename "$(pwd)")}"
+      FULL="${SESSION_PREFIX}-$(sanitize_name "$TMUX_SESSION_NAME")"
+      shift; [[ $# -gt 0 ]] && shift  # consume --tmux and optional name
+
+      # If session exists, attach to it
+      if tmux has-session -t "$FULL" 2>/dev/null; then
+        echo "[cld-tmux] Session '$FULL' exists. Attaching..." >&2
+        tmux_attach_or_switch "$FULL"
+        exit $?
+      fi
+
+      # Build the command: re-invoke this script without --tmux, passing remaining args
+      CLD_COMMAND="$0"
+      for arg in "$@"; do
+        CLD_COMMAND="$CLD_COMMAND $(printf '%q' "$arg")"
+      done
+
+      tmux new-session -d -s "$FULL" -c "$(pwd)" "$CLD_COMMAND"
+      LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname -i 2>/dev/null || echo "unknown")
+      echo "[cld-tmux] Started session '$FULL' in $(pwd)" >&2
+      echo "[cld-tmux] Connect from another device: ssh $(whoami)@${LOCAL_IP} -t 'tmux attach -t ${FULL}'" >&2
+      tmux_attach_or_switch "$FULL"
+      exit $?
+      ;;
+    *)
+      break  # remaining args passed to claude
+      ;;
+  esac
+done
 
 # ── Create ephemeral sandbox directory ───────────────────────
 SANDBOX_DIR=$(mktemp -d -t claude-sandbox.XXXXXX)
@@ -44,7 +144,7 @@ if [[ -d "$HOME/.claude" ]]; then
         ;;
     esac
 
-    cp -r "$item" "$SANDBOX_DIR/" 2>/dev/null || true
+    cp -rL "$item" "$SANDBOX_DIR/" 2>/dev/null || true
   done
 
   # Ensure essential auth files are copied
@@ -60,10 +160,51 @@ if [[ -d "$HOME/.claude" ]]; then
   echo "[sandbox] Created ephemeral session" >&2
 fi
 
+# ── Discover project-specific .cld/Dockerfile ──────────────
+CLD_EXTRA_MOUNTS=""
+CLD_EXTRA_ENV=""
+
+_search="$PWD"
+while [[ "$_search" != "/" && "$_search" != "$HOME" ]]; do
+  if [[ -f "$_search/.cld/Dockerfile" ]]; then
+    PROJECT_ROOT="$_search"
+    break
+  fi
+  _search="$(dirname "$_search")"
+done
+
+if [[ -n "${PROJECT_ROOT:-}" ]]; then
+  IMAGE_NAME="claude-sandbox-$(basename "$PROJECT_ROOT")"
+  echo "[sandbox] Project container: $IMAGE_NAME" >&2
+  # shellcheck disable=SC1091
+  [[ -f "$PROJECT_ROOT/.cld/config" ]] && source "$PROJECT_ROOT/.cld/config"
+fi
+
 # ── Build image if needed ────────────────────────────────────
-if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-  echo "[sandbox] Building container image (first run only)..." >&2
-  docker build -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Dockerfile.claude" "$SCRIPT_DIR" >&2
+# Always ensure the base image exists (project images depend on it)
+if ! docker image inspect claude-cli-sandbox &>/dev/null; then
+  echo "[sandbox] Building base image..." >&2
+  docker build -t claude-cli-sandbox -f "$SCRIPT_DIR/Dockerfile.claude" "$SCRIPT_DIR" >&2
+fi
+
+# Build project image if needed
+if [[ -n "${PROJECT_ROOT:-}" ]] && ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+  echo "[sandbox] Building project image '$IMAGE_NAME'..." >&2
+  docker build -t "$IMAGE_NAME" -f "$PROJECT_ROOT/.cld/Dockerfile" "$PROJECT_ROOT/.cld" >&2
+fi
+
+# ── SSH forwarding ──────────────────────────────────────────
+SSH_FLAGS=""
+if [[ "$SSH_MODE" == true ]]; then
+  if [[ -d "$HOME/.ssh" ]]; then
+    SSH_FLAGS="-v $HOME/.ssh:/home/claude/.ssh:ro"
+  else
+    echo "[sandbox] Warning: ~/.ssh not found, skipping SSH key mount" >&2
+  fi
+  if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
+    SSH_FLAGS="$SSH_FLAGS -v $SSH_AUTH_SOCK:/ssh-agent:ro -e SSH_AUTH_SOCK=/ssh-agent"
+  fi
+  echo "[sandbox] SSH keys mounted (read-only)" >&2
 fi
 
 # ── Determine docker run flags ───────────────────────────────
@@ -75,22 +216,40 @@ else
   DOCKER_FLAGS="$DOCKER_FLAGS -i"
 fi
 
-# ── Run Claude in ephemeral container ────────────────────────
+# ── Run container ────────────────────────────────────────────
 echo "[sandbox] Working directory: $(pwd)" >&2
 
-docker run $DOCKER_FLAGS \
-  -v "$(pwd):/workspace" \
-  -v "$SANDBOX_DIR:/home/claude/.claude" \
-  -v "$SANDBOX_DIR/claude.json:/home/claude/.claude.json" \
-  -w /workspace \
-  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
-  -e CLAUDE_CODE_USE_BEDROCK="${CLAUDE_CODE_USE_BEDROCK:-}" \
-  -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
-  -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
-  -e AWS_REGION="${AWS_REGION:-}" \
-  -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
-  -e TERM="${TERM:-xterm-256color}" \
-  "$IMAGE_NAME" \
-  claude --dangerously-skip-permissions "$@"
+if [[ "$SHELL_MODE" == true ]]; then
+  docker run $DOCKER_FLAGS \
+    -v "$(pwd):/workspace" \
+    -w /workspace \
+    -e TERM="${TERM:-xterm-256color}" \
+    $SSH_FLAGS \
+    $CLD_EXTRA_MOUNTS \
+    $CLD_EXTRA_ENV \
+    "$IMAGE_NAME" \
+    bash "$@"
+else
+  docker run $DOCKER_FLAGS \
+    --user "$(id -u):$(id -g)" \
+    -v "$(pwd):/workspace" \
+    -v "$SANDBOX_DIR:/home/claude/.claude" \
+    -v "$SANDBOX_DIR/claude.json:/home/claude/.claude.json" \
+    -w /workspace \
+    -e HOME=/home/claude \
+    -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    -e CLAUDE_CODE_USE_BEDROCK="${CLAUDE_CODE_USE_BEDROCK:-}" \
+    -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+    -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+    -e AWS_REGION="${AWS_REGION:-}" \
+    -e AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+    -e TERM="${TERM:-xterm-256color}" \
+    -e CLD_HOST_DIR="$(basename "$(pwd)")" \
+    $SSH_FLAGS \
+    $CLD_EXTRA_MOUNTS \
+    $CLD_EXTRA_ENV \
+    "$IMAGE_NAME" \
+    claude --dangerously-skip-permissions "$@"
 
-echo "[sandbox] Session ended, ephemeral data wiped" >&2
+  echo "[sandbox] Session ended, ephemeral data wiped" >&2
+fi

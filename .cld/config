@@ -1,0 +1,3 @@
+# Extra mounts for Kubernetes access
+CLD_EXTRA_MOUNTS="-v $HOME/.kube:/home/claude/.kube:ro"
+CLD_EXTRA_ENV="-e KUBECONFIG=/home/claude/.kube/config"

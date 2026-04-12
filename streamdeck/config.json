@@ -1,0 +1,30 @@
+{
+  "streamdeck_ui_version": 1,
+  "state": {
+    "YOUR_SERIAL_HERE": {
+      "buttons": {
+        "0": {
+          "0":  { "text": "Terminal",   "command": "wezterm start",                                                    "icon": "" },
+          "1":  { "text": "VS Code",    "command": "code",                                                             "icon": "" },
+          "2":  { "text": "Browser",    "command": "xdg-open https://",                                                "icon": "" },
+          "3":  { "text": "k9s",        "command": "wezterm start -- k9s",                                             "icon": "" },
+          "4":  { "text": "Files",      "command": "nautilus ~",                                                       "icon": "" },
+          "5":  { "text": "CPU\nMem",    "command": "STREAMDECK_SCRIPTS/status-cpu.sh --detail",     "icon": "" },
+          "6":  { "text": "Docker",     "command": "STREAMDECK_SCRIPTS/status-docker.sh --detail",  "icon": "" },
+          "7":  { "text": "K8s",        "command": "STREAMDECK_SCRIPTS/status-k8s.sh --detail",     "icon": "" },
+          "8":  { "text": "Disk",       "command": "STREAMDECK_SCRIPTS/status-disk.sh --detail",    "icon": "" },
+          "9":  { "text": "Network",    "command": "STREAMDECK_SCRIPTS/status-network.sh --detail", "icon": "" },
+          "10": { "text": "Screenshot", "keys": "super+shift+s",                                                      "icon": "" },
+          "11": { "text": "Lock",       "command": "loginctl lock-session",                                            "icon": "" },
+          "12": { "text": "Vol -",      "keys": "XF86AudioLowerVolume",                                               "icon": "" },
+          "13": { "text": "Vol +",      "keys": "XF86AudioRaiseVolume",                                               "icon": "" },
+          "14": { "text": "Mute",       "keys": "XF86AudioMute",                                                      "icon": "" }
+        }
+      },
+      "display_timeout": 0,
+      "brightness": 80,
+      "rotation": 0,
+      "page": 0
+    }
+  }
+}

@@ -90,3 +90,25 @@ The setup configures a comprehensive development environment with:
 - Git configuration with vim as the default editor
 
 All dotfiles are automatically symlinked from `dotfiles/` to `$HOME/` during setup.
+
+## Claude CLI Sandbox (`cld`)
+
+The `cld` command runs Claude CLI in a sandboxed Docker container. Projects can opt in to custom tooling by creating a `.cld/Dockerfile` that extends the base `claude-cli-sandbox` image.
+
+- `cld` auto-detects `.cld/Dockerfile` by walking up from the current directory
+- Project images are auto-built on first use, named `claude-sandbox-<project-dir>`
+- `.cld/config` (optional, sourced as bash) can set `CLD_EXTRA_MOUNTS` and `CLD_EXTRA_ENV`
+- `cld-rebuild` rebuilds the base + project image (if in a project)
+- `cld-rebuild --all` rebuilds the base + all discovered project images
+
+**Setup scripts:**
+- `./scripts/setup_cld.sh` - Build base and workspace sandbox images
+- `./scripts/setup_claude_skills.sh` - Symlink Claude Code skills to `~/.claude/skills/`
+
+## Claude Code Skills
+
+Skills live in `skills/<name>/SKILL.md` and are symlinked into `~/.claude/skills/` during setup so they are available globally.
+
+Available skills:
+- `/cld-init` - Scan a project for language/framework markers and generate `.cld/Dockerfile` automatically
+- `/autopilot` - Autonomous improvement loop — scan, fix, test, commit while the user is away

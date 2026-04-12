@@ -1,0 +1,30 @@
+{
+  "streamdeck_ui_version": 1,
+  "state": {
+    "YOUR_SERIAL_HERE": {
+      "buttons": {
+        "0": {
+          "0":  { "text": "Slack",    "command": "open -a Slack",                                    "icon": "" },
+          "1":  { "text": "Teams",    "command": "open -a 'Microsoft Teams'",                        "icon": "" },
+          "2":  { "text": "Mail",     "command": "open -a 'Microsoft Outlook'",                      "icon": "" },
+          "3":  { "text": "Calendar", "command": "open -a 'Microsoft Outlook' --args mailto:",       "icon": "" },
+          "4":  { "text": "Browser",  "command": "open -a 'Google Chrome'",                          "icon": "" },
+          "5":  { "text": "Claude 1", "command": "STREAMDECK_SCRIPTS/claude-launch.sh 1",            "icon": "" },
+          "6":  { "text": "\u23f3 C1",   "command": "STREAMDECK_SCRIPTS/claude-status.sh 1 in_progress",     "icon": "" },
+          "7":  { "text": "\u26a0 C1",    "command": "STREAMDECK_SCRIPTS/claude-status.sh 1 needs_attention", "icon": "" },
+          "8":  { "text": "\u2705 C1",   "command": "STREAMDECK_SCRIPTS/claude-status.sh 1 complete",        "icon": "" },
+          "9":  { "text": "\ud83d\udc41 C1",   "command": "STREAMDECK_SCRIPTS/claude-focus.sh 1",                   "icon": "" },
+          "10": { "text": "Claude 2", "command": "STREAMDECK_SCRIPTS/claude-launch.sh 2",            "icon": "" },
+          "11": { "text": "\u23f3 C2",   "command": "STREAMDECK_SCRIPTS/claude-status.sh 2 in_progress",     "icon": "" },
+          "12": { "text": "\u26a0 C2",    "command": "STREAMDECK_SCRIPTS/claude-status.sh 2 needs_attention", "icon": "" },
+          "13": { "text": "\u2705 C2",   "command": "STREAMDECK_SCRIPTS/claude-status.sh 2 complete",        "icon": "" },
+          "14": { "text": "\ud83d\udc41 C2",   "command": "STREAMDECK_SCRIPTS/claude-focus.sh 2",                   "icon": "" }
+        }
+      },
+      "display_timeout": 0,
+      "brightness": 80,
+      "rotation": 0,
+      "page": 0
+    }
+  }
+}

@@ -97,6 +97,16 @@ print_step_start "Docker Installation"
 "$SCRIPT_DIR/scripts/setup_docker.sh"
 print_step_end "Docker Installation"
 
+# Build Claude CLI sandbox images
+print_step_start "Claude CLI Sandbox Setup"
+"$SCRIPT_DIR/scripts/setup_cld.sh"
+print_step_end "Claude CLI Sandbox Setup"
+
+# Install Claude Code skills
+print_step_start "Claude Code Skills Installation"
+"$SCRIPT_DIR/scripts/setup_claude_skills.sh"
+print_step_end "Claude Code Skills Installation"
+
 # Install VS Code
 print_step_start "VS Code Installation"
 "$SCRIPT_DIR/scripts/setup_vscode.sh"
@@ -106,6 +116,16 @@ print_step_end "VS Code Installation"
 print_step_start "WezTerm Installation"
 "$SCRIPT_DIR/scripts/setup_wezterm.sh"
 print_step_end "WezTerm Installation"
+
+# Install Stream Deck
+print_step_start "Stream Deck Setup"
+"$SCRIPT_DIR/scripts/setup_streamdeck.sh"
+print_step_end "Stream Deck Setup"
+
+# # Install Moonlander keyboard dependencies
+# print_step_start "Moonlander Keyboard Setup"
+# "$SCRIPT_DIR/scripts/setup_moonlander.sh"
+# print_step_end "Moonlander Keyboard Setup"
 
 # Install ArgoCD CLI
 print_step_start "ArgoCD CLI Installation"
