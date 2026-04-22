@@ -6,29 +6,73 @@
 // - macOS: Cmd on home row (via Ctrl/GUI swap), Alt+Ctrl for window snapping
 //
 // Layer 0: Base QWERTY
-// Layer 1: Navigation, F-keys, OS-aware shortcuts (hold either MO(1) thumb key)
+// Layer 1: Navigation, F-keys, OS-aware shortcuts, RGB theme selection
+//
+// RGB themes (Layer 1, Q-row): Rainbow, Ocean, Fire, Matrix, Synthwave,
+// Forest, Party, Heatmap, plus cycle-next and off. Selection persists to EEPROM.
 
 #include QMK_KEYBOARD_H
 
+#ifdef AUDIO_ENABLE
+#include "song_list.h"
+// Linux mode: two low ascending notes
+float song_linux[][2] = SONG(E__NOTE(_E5), E__NOTE(_G5));
+// Mac mode: two higher descending notes
+float song_mac[][2]   = SONG(E__NOTE(_A5), E__NOTE(_E5));
+#endif
+
 // ---------------------------------------------------------------------------
-// OS mode: persisted to EEPROM via eeconfig_user
+// OS mode + theme mode: packed into a single eeconfig_user word
 // ---------------------------------------------------------------------------
 enum os_mode {
     OS_LINUX = 0,
     OS_MAC   = 1
 };
 
-static uint8_t os_mode = OS_LINUX;
+enum theme_mode {
+    THEME_RAINBOW = 0,   // Moving chevron rainbow
+    THEME_OCEAN,         // Slow cyan breathing
+    THEME_FIRE,          // Fast red/orange breathing
+    THEME_MATRIX,        // Green digital rain
+    THEME_SYNTHWAVE,     // Magenta breathing
+    THEME_FOREST,        // Green breathing
+    THEME_PARTY,         // Rainbow pinwheel
+    THEME_HEATMAP,       // Typing heatmap (keys warm on press)
+    THEME_OFF,           // LEDs off
+    THEME_COUNT
+};
+
+typedef union {
+    uint32_t raw;
+    struct {
+        uint8_t os_mode;
+        uint8_t theme_mode;
+    };
+} user_config_t;
+
+static user_config_t user_config;
 
 // ---------------------------------------------------------------------------
 // Custom keycodes
 // ---------------------------------------------------------------------------
 enum custom_keycodes {
-    OS_TOGG = SAFE_RANGE,  // OS mode toggle (fired by combo)
+    CU_OSTOGG = ZSA_SAFE_RANGE,  // OS mode toggle (fired by combo)
     CU_SNAP,               // Screenshot (OS-aware)
     CU_TERM,               // Terminal toggle (OS-aware)
     CU_WLFT,               // Window snap left (OS-aware)
     CU_WRGT,               // Window snap right (OS-aware)
+    CU_WUP,                // Window snap up / maximize (OS-aware)
+    CU_LOCK,               // Lock screen (OS-aware)
+    CU_TH_RB,              // Theme: Rainbow
+    CU_TH_OC,              // Theme: Ocean
+    CU_TH_FI,              // Theme: Fire
+    CU_TH_MX,              // Theme: Matrix
+    CU_TH_SW,              // Theme: Synthwave
+    CU_TH_FO,              // Theme: Forest
+    CU_TH_PT,              // Theme: Party
+    CU_TH_HM,              // Theme: Heatmap
+    CU_TH_NX,              // Theme: cycle next
+    CU_TH_OF,              // Theme: Off
 };
 
 // ---------------------------------------------------------------------------
@@ -45,42 +89,126 @@ enum layers {
 const uint16_t PROGMEM os_toggle_combo[] = {KC_SPC, KC_ENT, COMBO_END};
 
 combo_t key_combos[] = {
-    COMBO(os_toggle_combo, OS_TOGG),
+    COMBO(os_toggle_combo, CU_OSTOGG),
 };
 
 // ---------------------------------------------------------------------------
-// EEPROM persistence for OS mode
+// EEPROM persistence for OS + theme
 // ---------------------------------------------------------------------------
+static void save_user_config(void) {
+    eeconfig_update_user(user_config.raw);
+}
+
 void eeconfig_init_user(void) {
-    eeconfig_update_user(OS_LINUX);
-    os_mode = OS_LINUX;
+    user_config.raw        = 0;
+    user_config.os_mode    = OS_LINUX;
+    user_config.theme_mode = THEME_RAINBOW;
+    save_user_config();
 }
 
 static void apply_os_mode(void) {
-    keymap_config.raw = eeconfig_read_keymap();
-    if (os_mode == OS_MAC) {
+    eeconfig_read_keymap(&keymap_config);
+    if (user_config.os_mode == OS_MAC) {
         keymap_config.swap_lctl_lgui = true;
-        keymap_config.swap_rctl_rgui = true;
     } else {
         keymap_config.swap_lctl_lgui = false;
-        keymap_config.swap_rctl_rgui = false;
     }
-    eeconfig_update_keymap(keymap_config.raw);
+    eeconfig_update_keymap(&keymap_config);
+}
+
+static void apply_theme(void) {
+#ifdef RGB_MATRIX_ENABLE
+    // Moonlander's RGB_TOG persists LED_FLAG_NONE to EEPROM, which blanks
+    // all LEDs regardless of mode. Restore LED_FLAG_ALL on every non-OFF
+    // theme so the matrix is visible again.
+    if (user_config.theme_mode != THEME_OFF) {
+        rgb_matrix_set_flags(LED_FLAG_ALL);
+    }
+    switch (user_config.theme_mode) {
+    case THEME_RAINBOW:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_RAINBOW_MOVING_CHEVRON);
+        rgb_matrix_set_speed_noeeprom(120);
+        break;
+    case THEME_OCEAN:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
+        rgb_matrix_sethsv_noeeprom(140, 255, 200);  // teal/cyan
+        rgb_matrix_set_speed_noeeprom(60);          // slow swell
+        break;
+    case THEME_FIRE:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
+        rgb_matrix_sethsv_noeeprom(5, 255, 220);    // red/orange
+        rgb_matrix_set_speed_noeeprom(220);         // fast flicker
+        break;
+    case THEME_MATRIX:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_DIGITAL_RAIN);
+        break;
+    case THEME_SYNTHWAVE:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
+        rgb_matrix_sethsv_noeeprom(213, 255, 210);  // magenta/pink
+        rgb_matrix_set_speed_noeeprom(100);
+        break;
+    case THEME_FOREST:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
+        rgb_matrix_sethsv_noeeprom(85, 255, 180);   // green
+        rgb_matrix_set_speed_noeeprom(80);
+        break;
+    case THEME_PARTY:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_CYCLE_PINWHEEL);
+        rgb_matrix_set_speed_noeeprom(200);
+        break;
+    case THEME_HEATMAP:
+        rgb_matrix_enable_noeeprom();
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_TYPING_HEATMAP);
+        break;
+    case THEME_OFF:
+        rgb_matrix_disable_noeeprom();
+        break;
+    }
+#endif
 }
 
 void keyboard_post_init_user(void) {
-    os_mode = eeconfig_read_user() & 0xFF;
-    if (os_mode > OS_MAC) {
-        os_mode = OS_LINUX;
-        eeconfig_update_user(OS_LINUX);
+    user_config.raw = eeconfig_read_user();
+    if (user_config.os_mode > OS_MAC) {
+        user_config.os_mode = OS_LINUX;
+    }
+    if (user_config.theme_mode >= THEME_COUNT) {
+        user_config.theme_mode = THEME_RAINBOW;
     }
     apply_os_mode();
+    apply_theme();
 }
 
 static void toggle_os_mode(void) {
-    os_mode = (os_mode == OS_LINUX) ? OS_MAC : OS_LINUX;
-    eeconfig_update_user(os_mode);
+    user_config.os_mode = (user_config.os_mode == OS_LINUX) ? OS_MAC : OS_LINUX;
+    save_user_config();
     apply_os_mode();
+#ifdef AUDIO_ENABLE
+    if (user_config.os_mode == OS_MAC) {
+        PLAY_SONG(song_mac);
+    } else {
+        PLAY_SONG(song_linux);
+    }
+#endif
+}
+
+static void set_theme(uint8_t theme) {
+    if (theme >= THEME_COUNT) return;
+    user_config.theme_mode = theme;
+    save_user_config();
+    apply_theme();
+}
+
+static void cycle_theme(void) {
+    uint8_t next = (user_config.theme_mode + 1) % THEME_COUNT;
+    set_theme(next);
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +217,7 @@ static void toggle_os_mode(void) {
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
 
-    case OS_TOGG:
+    case CU_OSTOGG:
         if (record->event.pressed) {
             toggle_os_mode();
         }
@@ -98,7 +226,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     case CU_SNAP:
         // Linux/Win: PrintScreen | Mac: Cmd+Shift+4
         if (record->event.pressed) {
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 register_code(KC_LGUI);
                 register_code(KC_LSFT);
                 register_code(KC_4);
@@ -106,7 +234,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_PSCR);
             }
         } else {
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 unregister_code(KC_4);
                 unregister_code(KC_LSFT);
                 unregister_code(KC_LGUI);
@@ -119,7 +247,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     case CU_TERM:
         // Linux/Win: Ctrl+` | Mac: Cmd+`
         if (record->event.pressed) {
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 register_code(KC_LGUI);
             } else {
                 register_code(KC_LCTL);
@@ -127,7 +255,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             register_code(KC_GRV);
         } else {
             unregister_code(KC_GRV);
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 unregister_code(KC_LGUI);
             } else {
                 unregister_code(KC_LCTL);
@@ -138,7 +266,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     case CU_WLFT:
         // Linux/Win: Super+Left | Mac: Alt+Ctrl+Left
         if (record->event.pressed) {
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 register_code(KC_LCTL);
                 register_code(KC_LALT);
             } else {
@@ -147,7 +275,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             register_code(KC_LEFT);
         } else {
             unregister_code(KC_LEFT);
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 unregister_code(KC_LALT);
                 unregister_code(KC_LCTL);
             } else {
@@ -159,7 +287,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     case CU_WRGT:
         // Linux/Win: Super+Right | Mac: Alt+Ctrl+Right
         if (record->event.pressed) {
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 register_code(KC_LCTL);
                 register_code(KC_LALT);
             } else {
@@ -168,7 +296,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             register_code(KC_RGHT);
         } else {
             unregister_code(KC_RGHT);
-            if (os_mode == OS_MAC) {
+            if (user_config.os_mode == OS_MAC) {
                 unregister_code(KC_LALT);
                 unregister_code(KC_LCTL);
             } else {
@@ -176,6 +304,61 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
         }
         return false;
+
+    case CU_WUP:
+        // Linux/Win: Super+Up | Mac: Alt+Ctrl+Up
+        if (record->event.pressed) {
+            if (user_config.os_mode == OS_MAC) {
+                register_code(KC_LCTL);
+                register_code(KC_LALT);
+            } else {
+                register_code(KC_LGUI);
+            }
+            register_code(KC_UP);
+        } else {
+            unregister_code(KC_UP);
+            if (user_config.os_mode == OS_MAC) {
+                unregister_code(KC_LALT);
+                unregister_code(KC_LCTL);
+            } else {
+                unregister_code(KC_LGUI);
+            }
+        }
+        return false;
+
+    case CU_LOCK:
+        // Linux/Win: Super+L | Mac: Cmd+Ctrl+Q
+        if (record->event.pressed) {
+            if (user_config.os_mode == OS_MAC) {
+                register_code(KC_LGUI);
+                register_code(KC_LCTL);
+                register_code(KC_Q);
+            } else {
+                register_code(KC_LGUI);
+                register_code(KC_L);
+            }
+        } else {
+            if (user_config.os_mode == OS_MAC) {
+                unregister_code(KC_Q);
+                unregister_code(KC_LCTL);
+                unregister_code(KC_LGUI);
+            } else {
+                unregister_code(KC_L);
+                unregister_code(KC_LGUI);
+            }
+        }
+        return false;
+
+    case CU_TH_RB: if (record->event.pressed) set_theme(THEME_RAINBOW);   return false;
+    case CU_TH_OC: if (record->event.pressed) set_theme(THEME_OCEAN);     return false;
+    case CU_TH_FI: if (record->event.pressed) set_theme(THEME_FIRE);      return false;
+    case CU_TH_MX: if (record->event.pressed) set_theme(THEME_MATRIX);    return false;
+    case CU_TH_SW: if (record->event.pressed) set_theme(THEME_SYNTHWAVE); return false;
+    case CU_TH_FO: if (record->event.pressed) set_theme(THEME_FOREST);    return false;
+    case CU_TH_PT: if (record->event.pressed) set_theme(THEME_PARTY);     return false;
+    case CU_TH_HM: if (record->event.pressed) set_theme(THEME_HEATMAP);   return false;
+    case CU_TH_OF: if (record->event.pressed) set_theme(THEME_OFF);       return false;
+    case CU_TH_NX: if (record->event.pressed) cycle_theme();              return false;
     }
 
     return true;
@@ -190,49 +373,51 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 // Base Layer: QWERTY
 // ┌───────┬─────┬─────┬─────┬─────┬─────┬─────┐   ┌─────┬─────┬─────┬─────┬─────┬─────┬───────┐
-// │  Esc  │  1  │  2  │  3  │  4  │  5  │  =  │   │  -  │  6  │  7  │  8  │  9  │  0  │ Bksp  │
+// │  `/~  │  1  │  2  │  3  │  4  │  5  │  [  │   │  ]   │  6  │  7  │  8  │  9  │  0  │  -/_  │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │  Tab  │  Q  │  W  │  E  │  R  │  T  │  [  │   │  ]  │  Y  │  U  │  I  │  O  │  P  │   \   │
+// │  Tab  │  Q  │  W  │  E  │  R  │  T  │Copy │   │Vol+ │  Y  │  U  │  I  │  O  │  P  │   \   │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │ Ctrl  │  A  │  S  │  D  │  F  │  G  │  `  │   │  '  │  H  │  J  │  K  │  L  │  ;  │ Enter │
-// ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │ Shift │  Z  │  X  │  C  │  V  │  B  │ GUI │   │ GUI │  N  │  M  │  ,  │  .  │  /  │ Shift │
+// │ Nav   │  A  │  S  │  D  │  F  │  G  │Paste│   │Vol- │  H  │  J  │  K  │  L  │  ;  │   '   │
 // ├───────┼─────┼─────┼─────┼─────┼─────┘─────┘   └─────└─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │     │     │     │ Alt │                             │ Alt │     │     │     │       │
-// └───────┴─────┴─────┴─────┴─────┘                             └─────┴─────┴─────┴─────┴───────┘
+// │ Shift │  Z  │  X  │  C  │  V  │  B  │                     │  N  │  M  │  ,  │  .  │  /  │  =/+  │
+// ├───────┼─────┼─────┼─────┼─────┘─────┘                     └─────└─────┼─────┼─────┼─────┼───────┤
+// │ RCtrl │RAlt │Super│ F5  │ F12 │      Esc                    Nav       │ Alt │  ←  │  ↓  │  ↑  │   →   │
+// └───────┴─────┴─────┴─────┴─────┘                                       └─────┴─────┴─────┴─────┴───────┘
 //                             ┌─────┬─────┬─────┐ ┌─────┬─────┬─────┐
-//                             │Space│Bksp │MO(1)│ │Enter│ Tab │MO(1)│
+//                             │Ctrl │ Alt │Enter│ │Bksp │ Del │Space│
 //                             └─────┴─────┴─────┘ └─────┴─────┴─────┘
-[_BASE] = LAYOUT_moonlander(
-    KC_ESC,  KC_1,    KC_2,    KC_3,    KC_4,    KC_5,    KC_EQL,       KC_MINS, KC_6,    KC_7,    KC_8,    KC_9,    KC_0,    KC_BSPC,
-    KC_TAB,  KC_Q,    KC_W,    KC_E,    KC_R,    KC_T,    KC_LBRC,      KC_RBRC, KC_Y,    KC_U,    KC_I,    KC_O,    KC_P,    KC_BSLS,
-    KC_LCTL, KC_A,    KC_S,    KC_D,    KC_F,    KC_G,    KC_GRV,       KC_QUOT, KC_H,    KC_J,    KC_K,    KC_L,    KC_SCLN, KC_ENT,
-    KC_LSFT, KC_Z,    KC_X,    KC_C,    KC_V,    KC_B,    KC_LGUI,      KC_RGUI, KC_N,    KC_M,    KC_COMM, KC_DOT,  KC_SLSH, KC_RSFT,
-    XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, KC_LALT,                                         KC_RALT, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX,
-                                         KC_SPC,  KC_BSPC, MO(_NAV),    KC_ENT,  KC_TAB,  MO(_NAV)
+[_BASE] = LAYOUT(
+    KC_GRV,  KC_1,    KC_2,    KC_3,    KC_4,    KC_5,    KC_LBRC,      KC_RBRC, KC_6,    KC_7,    KC_8,    KC_9,    KC_0,    KC_MINS,
+    KC_TAB,  KC_Q,    KC_W,    KC_E,    KC_R,    KC_T,    C(KC_C),      KC_VOLU, KC_Y,    KC_U,    KC_I,    KC_O,    KC_P,    KC_BSLS,
+    MO(_NAV),KC_A,    KC_S,    KC_D,    KC_F,    KC_G,    C(KC_V),      KC_VOLD, KC_H,    KC_J,    KC_K,    KC_L,    KC_SCLN, KC_QUOT,
+    KC_LSFT, KC_Z,    KC_X,    KC_C,    KC_V,    KC_B,                           KC_N,    KC_M,    KC_COMM, KC_DOT,  KC_SLSH, KC_EQL,
+    KC_RCTL, KC_RALT, KC_RGUI, KC_F5,   KC_F12,           KC_ESC,     MO(_NAV),          KC_RALT, KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT,
+                                         KC_LCTL, KC_LALT, KC_ENT,      KC_BSPC, KC_DEL,  KC_SPC
 ),
 
 // Nav/Function Layer
+// Theme row (Q..P positions): Rainbow, Ocean, Fire, Matrix, Synthwave |
+//                             Forest, Party, Heatmap, Next, Off
 // ┌───────┬─────┬─────┬─────┬─────┬─────┬─────┐   ┌─────┬─────┬─────┬─────┬─────┬─────┬───────┐
-// │       │ F1  │ F2  │ F3  │ F4  │ F5  │ F11 │   │ F12 │ F6  │ F7  │ F8  │ F9  │ F10 │  Del  │
+// │ Lock  │ F1  │ F2  │ F3  │ F4  │ F5  │  =  │   │  -  │ F6  │ F7  │ F8  │ F9  │ F10 │  Del  │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │     │     │     │     │     │     │   │     │     │     │     │     │     │       │
+// │       │Rnbw │Ocean│Fire │Mtrx │Synth│  [  │   │  ]  │Frst │Prty │Heat │Next │Off  │       │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │     │Snap │     │     │     │     │   │     │  ←  │  ↓  │  ↑  │  →  │     │       │
-// ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │     │     │     │     │     │WinL │   │WinR │     │     │     │     │     │       │
+// │       │     │Snap │     │     │     │  `  │   │Enter│  ←  │  ↓  │  ↑  │  →  │     │       │
 // ├───────┼─────┼─────┼─────┼─────┼─────┘─────┘   └─────└─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │     │Home │ End │     │                             │     │PgDn │PgUp │     │       │
-// └───────┴─────┴─────┴─────┴─────┘                             └─────┴─────┴─────┴─────┴───────┘
+// │       │     │     │     │     │     │                     │     │     │     │     │     │       │
+// ├───────┼─────┼─────┼─────┼─────┘─────┘                     └─────└─────┼─────┼─────┼─────┼───────┤
+// │ WinL  │WinUp│WinR │Home │ End │                                      │     │PgDn │PgUp │     │       │
+// └───────┴─────┴─────┴─────┴─────┘                                       └─────┴─────┴─────┴─────┴───────┘
 //                             ┌─────┬─────┬─────┐ ┌─────┬─────┬─────┐
 //                             │     │     │     │ │Term │     │     │
 //                             └─────┴─────┴─────┘ └─────┴─────┴─────┘
-[_NAV] = LAYOUT_moonlander(
-    _______, KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,   KC_F11,       KC_F12,  KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,  KC_DEL,
-    _______, _______, _______, _______, _______, _______, _______,      _______, _______, _______, _______, _______, _______, _______,
-    _______, _______, CU_SNAP, _______, _______, _______, _______,      _______, KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT, _______, _______,
-    _______, _______, _______, _______, _______, _______, CU_WLFT,      CU_WRGT, _______, _______, _______, _______, _______, _______,
-    _______, _______, KC_HOME, KC_END,  _______,                                          _______, KC_PGDN, KC_PGUP, _______, _______,
+[_NAV] = LAYOUT(
+    CU_LOCK, KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,   KC_EQL,       KC_MINS, KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,  KC_DEL,
+    _______, CU_TH_RB,CU_TH_OC,CU_TH_FI,CU_TH_MX,CU_TH_SW,KC_LBRC,      KC_RBRC, CU_TH_FO,CU_TH_PT,CU_TH_HM,CU_TH_NX,CU_TH_OF,_______,
+    _______, _______, CU_SNAP, _______, _______, _______, KC_GRV,       KC_ENT,  KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT, _______, _______,
+    _______, _______, _______, _______, _______, _______,                        _______, _______, _______, _______, _______, _______,
+    CU_WLFT, CU_WUP,  CU_WRGT, KC_HOME, KC_END,           _______,     _______,          _______, KC_PGDN, KC_PGUP, _______, _______,
                                          _______, _______, _______,      CU_TERM, _______, _______
 ),
 

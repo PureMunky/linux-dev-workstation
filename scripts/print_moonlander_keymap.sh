@@ -16,7 +16,7 @@ if [[ ! -f "$KEYMAP_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Parse the LAYOUT_moonlander() calls to extract key names per layer
+# Parse the LAYOUT() calls to extract key names per layer
 # ---------------------------------------------------------------------------
 
 # Map QMK keycodes to readable labels (5 chars max for alignment)
@@ -40,24 +40,30 @@ declare -A KC_MAP=(
     [KC_LCTL]="Ctrl"   [KC_RCTL]="Ctrl"  [KC_LSFT]="Shift" [KC_RSFT]="Shift"
     [KC_LALT]="Alt"    [KC_RALT]="Alt"   [KC_LGUI]="GUI"    [KC_RGUI]="GUI"
     # Navigation
-    [KC_LEFT]="Left"   [KC_RGHT]="Right" [KC_UP]="Up"       [KC_DOWN]="Down"
+    [KC_LEFT]="←"      [KC_RGHT]="→"     [KC_UP]="↑"        [KC_DOWN]="↓"
     [KC_HOME]="Home"   [KC_END]="End"    [KC_PGUP]="PgUp"   [KC_PGDN]="PgDn"
     # Editing
     [KC_ENT]="Enter"   [KC_ESC]="Esc"    [KC_BSPC]="Bksp"  [KC_TAB]="Tab"
     [KC_SPC]="Space"   [KC_DEL]="Del"    [KC_INS]="Ins"     [KC_PSCR]="PrtSc"
     [KC_PENT]="PdEnt"
+    # Media
+    [KC_VOLU]="Vol+"   [KC_VOLD]="Vol-"   [KC_MUTE]="Mute"
+    [KC_MNXT]="Next"   [KC_MPRV]="Prev"   [KC_MPLY]="Play"
     # F-keys
     [KC_F1]="F1"   [KC_F2]="F2"   [KC_F3]="F3"   [KC_F4]="F4"
     [KC_F5]="F5"   [KC_F6]="F6"   [KC_F7]="F7"   [KC_F8]="F8"
     [KC_F9]="F9"   [KC_F10]="F10" [KC_F11]="F11"  [KC_F12]="F12"
     # Custom keycodes
-    [CU_SNAP]="Snap"   [CU_TERM]="Term"  [CU_WLFT]="WinL"  [CU_WRGT]="WinR"
-    [OS_TOGG]="OSTog"
+    [CU_SNAP]="Snap"   [CU_TERM]="Term"  [CU_WLFT]="WinL"  [CU_WRGT]="WinR"  [CU_WUP]="WinUp"
+    [CU_OSTOGG]="OSTog" [CU_LOCK]="Lock"
+    # Theme selectors (Layer 1)
+    [CU_TH_RB]="Rnbw"  [CU_TH_OC]="Ocean" [CU_TH_FI]="Fire" [CU_TH_MX]="Mtrx"  [CU_TH_SW]="Synth"
+    [CU_TH_FO]="Frst"  [CU_TH_PT]="Prty"  [CU_TH_HM]="Heat" [CU_TH_NX]="Next"  [CU_TH_OF]="Off"
     # Transparent / blocked
-    [_______]="  ."    [XXXXXXX]=" "
+    [_______]="·"      [XXXXXXX]=""
 )
 
-# Extract keys from a LAYOUT_moonlander() block given a layer name pattern
+# Extract keys from a LAYOUT() block given a layer name pattern
 # Returns an array of key labels
 extract_layer_keys() {
     local layer_pattern="$1"
@@ -66,7 +72,7 @@ extract_layer_keys() {
 
     while IFS= read -r line; do
         # Detect start of the target layout block
-        if [[ "$line" =~ $layer_pattern.*LAYOUT_moonlander ]]; then
+        if [[ "$line" =~ $layer_pattern.*LAYOUT ]]; then
             in_layout=1
             continue
         fi
@@ -82,7 +88,16 @@ extract_layer_keys() {
         [[ -z "${line// /}" ]] && continue
 
         # Extract keycodes from this line
-        cleaned="${line//,/ }"
+        # First, resolve C(x) → Ctrl+label, S(x) → Shft+label, etc.
+        cleaned="$line"
+        while [[ "$cleaned" =~ C\(([A-Z_0-9]+)\) ]]; do
+            local inner="${BASH_REMATCH[1]}"
+            local inner_label="${KC_MAP[$inner]:-${inner#KC_}}"
+            local replacement="CX_${inner_label// /}"
+            KC_MAP["$replacement"]="C+${inner_label}"
+            cleaned="${cleaned/C(${inner})/$replacement}"
+        done
+        cleaned="${cleaned//,/ }"
         for token in $cleaned; do
             token="$(echo "$token" | xargs)"
             [[ -z "$token" ]] && continue
@@ -99,7 +114,7 @@ extract_layer_keys() {
             # Look up in map
             if [[ -n "${KC_MAP[$token]+x}" ]]; then
                 keys+=("${KC_MAP[$token]}")
-            elif [[ "$token" =~ ^KC_ || "$token" =~ ^CU_ || "$token" =~ ^OS_ ]]; then
+            elif [[ "$token" =~ ^KC_ || "$token" =~ ^CU_ || "$token" =~ ^OS_ || "$token" =~ ^CX_ ]]; then
                 # Unknown keycode - use short form
                 local short="${token#KC_}"
                 short="${short#CU_}"
@@ -121,11 +136,12 @@ render_layer() {
         keys+=("$line")
     done
 
-    # Moonlander layout: 72 keys total
-    # Row 0-3: 7 left + 7 right = 14 per row (56 total)
-    # Row 4:   5 left + 5 right = 10
+    # ZSA fork LAYOUT for Moonlander rev B: 72 keys total
+    # Row 0-2: 7 left + 7 right = 14 per row (42 total)
+    # Row 3:   6 left + 6 right = 12 (no inner big key)
+    # Row 4:   5 left + big + big + 5 right = 12
     # Thumb:   3 left + 3 right = 6
-    # Total: 56 + 10 + 6 = 72
+    # Total: 42 + 12 + 12 + 6 = 72
 
     if [[ ${#keys[@]} -lt 72 ]]; then
         echo "  (incomplete layer data: got ${#keys[@]} keys, expected 72)" >&2
@@ -146,145 +162,66 @@ render_layer() {
         fi
     }
 
-    # Key widths
     local W=5  # standard key cell width
+    local S="─────"  # segment (W dashes)
 
-    # Row rendering function
-    # Args: index_start, count_left, count_right
-    render_row() {
-        local start=$1 left_count=$2 right_count=$3
-        local sep_l="" sep_r="" row_l="" row_r=""
-        local i
-
-        # Left side
-        for (( i=start; i<start+left_count; i++ )); do
-            local label
-            label="$(pad "${keys[$i]}" $W)"
-            if [[ $i -eq $start ]]; then
-                row_l="│${label}"
-            else
-                row_l="${row_l}│${label}"
-            fi
+    # Build a row of cells from keys array
+    # Args: start_index count
+    build_row() {
+        local start=$1 count=$2 out=""
+        for (( i=start; i<start+count; i++ )); do
+            out="${out}│$(pad "${keys[$i]}" $W)"
         done
-        row_l="${row_l}│"
-
-        # Right side
-        local rstart=$(( start + left_count ))
-        for (( i=rstart; i<rstart+right_count; i++ )); do
-            local label
-            label="$(pad "${keys[$i]}" $W)"
-            if [[ $i -eq $rstart ]]; then
-                row_r="│${label}"
-            else
-                row_r="${row_r}│${label}"
-            fi
-        done
-        row_r="${row_r}│"
-
-        echo "  ${row_l}   ${row_r}"
+        echo "${out}│"
     }
 
-    render_border() {
-        local left_count=$1 right_count=$2 char_l=$3 char_m=$4 char_r=$5
-        local line_l="" line_r=""
-        local i
-
-        for (( i=0; i<left_count; i++ )); do
-            local seg
-            seg=$(printf '%0.s─' $(seq 1 $W))
-            if [[ $i -eq 0 ]]; then
-                line_l="${char_l}${seg}"
-            else
-                line_l="${line_l}${char_m}${seg}"
-            fi
-        done
-        line_l="${line_l}${char_r}"
-
-        for (( i=0; i<right_count; i++ )); do
-            local seg
-            seg=$(printf '%0.s─' $(seq 1 $W))
-            if [[ $i -eq 0 ]]; then
-                line_r="${char_l}${seg}"
-            else
-                line_r="${line_r}${char_m}${seg}"
-            fi
-        done
-        line_r="${line_r}${char_r}"
-
-        echo "  ${line_l}   ${line_r}"
-    }
-
-    # Rows 0-3: 7+7
-    for row in 0 1 2 3; do
-        local idx=$(( row * 14 ))
-        if [[ $row -eq 0 ]]; then
-            render_border 7 7 "┌" "┬" "┐"
-        else
-            render_border 7 7 "├" "┼" "┤"
-        fi
-        render_row $idx 7 7
-    done
-
-    # Helper to build a border of N cells
-    border_of() {
-        local count=$1 cl=$2 cm=$3 cr=$4
-        local line=""
+    # Build a border line of N cells
+    # Args: count left_char mid_char right_char
+    build_border() {
+        local count=$1 cl=$2 cm=$3 cr=$4 out=""
         for (( i=0; i<count; i++ )); do
-            local seg
-            seg=$(printf '%0.s─' $(seq 1 $W))
-            if [[ $i -eq 0 ]]; then line="${cl}${seg}"; else line="${line}${cm}${seg}"; fi
+            if [[ $i -eq 0 ]]; then out="${cl}${S}"; else out="${out}${cm}${S}"; fi
         done
-        echo "${line}${cr}"
+        echo "${out}${cr}"
     }
 
-    # Row 4: 5 left + 5 right (bottom row, no outer columns)
-    # Transition border: left 5 connect to row above, right 5 connect to row above
-    local seg
-    seg=$(printf '%0.s─' $(seq 1 $W))
-    local trans_l="├${seg}┼${seg}┼${seg}┼${seg}┼${seg}┤"
-    local trans_r="├${seg}┼${seg}┼${seg}┼${seg}┼${seg}┤"
-    echo "  ${trans_l}                     ${trans_r}"
+    local G="   "  # gap between halves
 
-    local row4_l="" row4_r=""
-    for (( i=56; i<61; i++ )); do
-        local label
-        label="$(pad "${keys[$i]}" $W)"
-        if [[ $i -eq 56 ]]; then row4_l="│${label}"; else row4_l="${row4_l}│${label}"; fi
+    # Rows 0-2: 7 left + 7 right
+    for row in 0 1 2; do
+        local idx=$(( row * 14 ))
+        local cl="┌" cm="┬" cr="┐"
+        if [[ $row -gt 0 ]]; then cl="├"; cm="┼"; cr="┤"; fi
+        echo "  $(build_border 7 $cl $cm $cr)${G}$(build_border 7 $cl $cm $cr)"
+        echo "  $(build_row $idx 7)${G}$(build_row $((idx+7)) 7)"
     done
-    row4_l="${row4_l}│"
-    for (( i=61; i<66; i++ )); do
-        local label
-        label="$(pad "${keys[$i]}" $W)"
-        if [[ $i -eq 61 ]]; then row4_r="│${label}"; else row4_r="${row4_r}│${label}"; fi
-    done
-    row4_r="${row4_r}│"
-    echo "  ${row4_l}                     ${row4_r}"
 
-    local bl br
-    bl="$(border_of 5 "└" "┴" "┘")"
-    br="$(border_of 5 "└" "┴" "┘")"
-    echo "  ${bl}                     ${br}"
+    # Row 3: 6 left + 6 right (no inner column)
+    # gap = 91 - 2 - 37 - 37 = 15
+    local G3="               "  # 15 spaces
+    echo "  $(build_border 6 "├" "┼" "┤")${G3}$(build_border 6 "├" "┼" "┤")"
+    echo "  $(build_row 42 6)${G3}$(build_row 48 6)"
+    echo "  $(build_border 6 "└" "┴" "┘")${G3}$(build_border 6 "└" "┴" "┘")"
 
-    # Thumb cluster: 3+3 (indices 66-71)
-    local thumb_border
-    thumb_border="$(border_of 3 "┌" "┬" "┐")"
-    echo "                          ${thumb_border}   ${thumb_border}"
-    local thumb_l="" thumb_r=""
-    for (( i=66; i<69; i++ )); do
-        local label
-        label="$(pad "${keys[$i]}" $W)"
-        if [[ $i -eq 66 ]]; then thumb_l="│${label}"; else thumb_l="${thumb_l}│${label}"; fi
-    done
-    thumb_l="${thumb_l}│"
-    for (( i=69; i<72; i++ )); do
-        local label
-        label="$(pad "${keys[$i]}" $W)"
-        if [[ $i -eq 69 ]]; then thumb_r="│${label}"; else thumb_r="${thumb_r}│${label}"; fi
-    done
-    thumb_r="${thumb_r}│"
-    echo "                          ${thumb_l}   ${thumb_r}"
-    thumb_border="$(border_of 3 "└" "┴" "┘")"
-    echo "                          ${thumb_border}   ${thumb_border}"
+    # Row 4: 5 left + 5 right
+    # gap = 91 - 2 - 31 - 31 = 27
+    local G4="                           "  # 27 spaces
+    echo "  $(build_border 5 "┌" "┬" "┐")${G4}$(build_border 5 "┌" "┬" "┐")"
+    echo "  $(build_row 54 5)${G4}$(build_row 61 5)"
+    echo "  $(build_border 5 "└" "┴" "┘")${G4}$(build_border 5 "└" "┴" "┘")"
+
+    # Big keys (indices 59 and 60) — centered
+    local big_l big_r
+    big_l="$(pad "${keys[59]}" $W)"
+    big_r="$(pad "${keys[60]}" $W)"
+    echo "                              ┌─────┐   ┌─────┐"
+    echo "                              │${big_l}│   │${big_r}│"
+    echo "                              └─────┘   └─────┘"
+
+    # Thumb cluster: 3 left + 3 right (indices 66-71) — centered
+    echo "                          $(build_border 3 "┌" "┬" "┐")${G}$(build_border 3 "┌" "┬" "┐")"
+    echo "                          $(build_row 66 3)${G}$(build_row 69 3)"
+    echo "                          $(build_border 3 "└" "┴" "┘")${G}$(build_border 3 "└" "┴" "┘")"
 }
 
 # ---------------------------------------------------------------------------
@@ -299,29 +236,33 @@ if [[ -t 1 ]]; then
     RESET=$'\033[0m'
 fi
 
+DIV="  ──────────────────────────────────────────────────────────────────────────────"
+
 echo ""
-echo "${BOLD}╔══════════════════════════════════════════════════════════════════════════════╗${RESET}"
-echo "${BOLD}║                     MOONLANDER KEYMAP REFERENCE                             ║${RESET}"
-echo "${BOLD}╚══════════════════════════════════════════════════════════════════════════════╝${RESET}"
+echo "${BOLD}  MOONLANDER KEYMAP REFERENCE${RESET}"
+echo "$DIV"
 
 # --- Layer 0: Base ---
 echo ""
-echo "${BOLD}  LAYER 0: BASE (QWERTY)${RESET}"
+echo "${BOLD}  LAYER 0 — BASE (QWERTY)${RESET}"
 echo ""
 extract_layer_keys '\[_BASE\]' | render_layer
 
 # --- Layer 1: Nav ---
 echo ""
-echo "${BOLD}  LAYER 1: NAV / FUNCTION  (hold Nav thumb key)${RESET}"
-echo "  ( . = transparent, falls through to base layer)"
+echo "$DIV"
+echo ""
+echo "${BOLD}  LAYER 1 — NAV / FUNCTION  (hold any Nav key)${RESET}"
+echo "  · = transparent, falls through to base layer"
 echo ""
 extract_layer_keys '\[_NAV\]' | render_layer
 
 # --- OS mode reference ---
 echo ""
-echo "${BOLD}  OS MODE TOGGLE${RESET}"
-echo "  Press Space + Enter simultaneously to switch modes."
-echo "  Mode is saved to EEPROM and persists across power cycles."
+echo "$DIV"
+echo ""
+echo "${BOLD}  OS MODE TOGGLE  (Space + Enter simultaneously)${RESET}"
+echo "  Mode persists across power cycles (stored in EEPROM)."
 echo ""
 echo "  ┌──────────────────┬──────────────────────┬──────────────────────┐"
 echo "  │ Action           │ Linux / Windows       │ macOS                │"
@@ -335,6 +276,24 @@ echo "  │ Terminal toggle  │ Ctrl+\`               │ Cmd+\`               
 echo "  └──────────────────┴──────────────────────┴──────────────────────┘"
 echo ""
 echo "  Ctrl/Cmd swap is automatic — physical Ctrl key sends Cmd in Mac mode."
+echo ""
+echo "$DIV"
+echo ""
+echo "${BOLD}  RGB THEMES  (Layer 1, Q-row)${RESET}"
+echo "  Hold Nav, then tap a theme key. Current theme persists across reboots."
+echo ""
+echo "  ┌──────────┬──────────────────────────────────────────────┐"
+echo "  │ Nav + Q  │ Rainbow    — moving chevron, full spectrum  │"
+echo "  │ Nav + W  │ Ocean      — slow cyan breathing             │"
+echo "  │ Nav + E  │ Fire       — fast red/orange flicker         │"
+echo "  │ Nav + R  │ Matrix     — green digital rain              │"
+echo "  │ Nav + T  │ Synthwave  — magenta breathing               │"
+echo "  │ Nav + Y  │ Forest     — green breathing                 │"
+echo "  │ Nav + U  │ Party      — spinning rainbow pinwheel       │"
+echo "  │ Nav + I  │ Heatmap    — keys warm as you type           │"
+echo "  │ Nav + O  │ Next       — cycle to the next theme         │"
+echo "  │ Nav + P  │ Off        — disable RGB                     │"
+echo "  └──────────┴──────────────────────────────────────────────┘"
 echo ""
 echo "  Generated from: keyboards/moonlander/keymap.c"
 echo "  Date: $(date +%Y-%m-%d)"
