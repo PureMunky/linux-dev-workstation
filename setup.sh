@@ -107,6 +107,11 @@ print_step_start "Claude Code Skills Installation"
 "$SCRIPT_DIR/scripts/setup_claude_skills.sh"
 print_step_end "Claude Code Skills Installation"
 
+# Install Claude Code status line
+print_step_start "Claude Code Status Line Installation"
+"$SCRIPT_DIR/scripts/setup_claude_statusline.sh"
+print_step_end "Claude Code Status Line Installation"
+
 # Install VS Code
 print_step_start "VS Code Installation"
 "$SCRIPT_DIR/scripts/setup_vscode.sh"
