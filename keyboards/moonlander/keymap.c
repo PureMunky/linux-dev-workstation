@@ -8,8 +8,8 @@
 // Layer 0: Base QWERTY
 // Layer 1: Navigation, F-keys, OS-aware shortcuts, RGB theme selection
 //
-// RGB themes (Layer 1, Q-row): Rainbow, Ocean, Fire, Matrix, Synthwave,
-// Forest, Party, Heatmap, plus cycle-next and off. Selection persists to EEPROM.
+// RGB themes (Layer 1, Q-row): Beach, Ocean, Aurora, Starfield, Cyberpunk,
+// Forest, Party, Splash, plus cycle-next and off. Selection persists to EEPROM.
 
 #include QMK_KEYBOARD_H
 
@@ -30,14 +30,14 @@ enum os_mode {
 };
 
 enum theme_mode {
-    THEME_RAINBOW = 0,   // Moving chevron rainbow
+    THEME_BEACH = 0,     // Teal brightness band rolling across like waves
     THEME_OCEAN,         // Slow cyan breathing
-    THEME_FIRE,          // Fast red/orange breathing
-    THEME_MATRIX,        // Green digital rain
-    THEME_SYNTHWAVE,     // Magenta breathing
+    THEME_AURORA,        // Hue-breathing through green/teal/blue
+    THEME_STARFIELD,     // Soft cool twinkle
+    THEME_CYBERPUNK,     // Magenta base, neon crosshairs on keypress
     THEME_FOREST,        // Green breathing
     THEME_PARTY,         // Rainbow pinwheel
-    THEME_HEATMAP,       // Typing heatmap (keys warm on press)
+    THEME_SPLASH,        // Lavender ripple expands from each keypress
     THEME_OFF,           // LEDs off
     THEME_COUNT
 };
@@ -63,14 +63,14 @@ enum custom_keycodes {
     CU_WRGT,               // Window snap right (OS-aware)
     CU_WUP,                // Window snap up / maximize (OS-aware)
     CU_LOCK,               // Lock screen (OS-aware)
-    CU_TH_RB,              // Theme: Rainbow
+    CU_TH_BC,              // Theme: Beach
     CU_TH_OC,              // Theme: Ocean
-    CU_TH_FI,              // Theme: Fire
-    CU_TH_MX,              // Theme: Matrix
-    CU_TH_SW,              // Theme: Synthwave
+    CU_TH_AU,              // Theme: Aurora
+    CU_TH_SF,              // Theme: Starfield
+    CU_TH_CP,              // Theme: Cyberpunk
     CU_TH_FO,              // Theme: Forest
     CU_TH_PT,              // Theme: Party
-    CU_TH_HM,              // Theme: Heatmap
+    CU_TH_SP,              // Theme: Splash
     CU_TH_NX,              // Theme: cycle next
     CU_TH_OF,              // Theme: Off
 };
@@ -102,7 +102,7 @@ static void save_user_config(void) {
 void eeconfig_init_user(void) {
     user_config.raw        = 0;
     user_config.os_mode    = OS_LINUX;
-    user_config.theme_mode = THEME_RAINBOW;
+    user_config.theme_mode = THEME_BEACH;
     save_user_config();
 }
 
@@ -125,10 +125,12 @@ static void apply_theme(void) {
         rgb_matrix_set_flags(LED_FLAG_ALL);
     }
     switch (user_config.theme_mode) {
-    case THEME_RAINBOW:
+    case THEME_BEACH:
+        // Brightness band rolling horizontally across a teal background
         rgb_matrix_enable_noeeprom();
-        rgb_matrix_mode_noeeprom(RGB_MATRIX_RAINBOW_MOVING_CHEVRON);
-        rgb_matrix_set_speed_noeeprom(120);
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_BAND_VAL);
+        rgb_matrix_sethsv_noeeprom(132, 255, 220);  // teal/sea
+        rgb_matrix_set_speed_noeeprom(100);         // wave cadence
         break;
     case THEME_OCEAN:
         rgb_matrix_enable_noeeprom();
@@ -136,21 +138,25 @@ static void apply_theme(void) {
         rgb_matrix_sethsv_noeeprom(140, 255, 200);  // teal/cyan
         rgb_matrix_set_speed_noeeprom(60);          // slow swell
         break;
-    case THEME_FIRE:
+    case THEME_AURORA:
+        // Slow hue breathing around green/teal — northern lights
         rgb_matrix_enable_noeeprom();
-        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
-        rgb_matrix_sethsv_noeeprom(5, 255, 220);    // red/orange
-        rgb_matrix_set_speed_noeeprom(220);         // fast flicker
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_HUE_BREATHING);
+        rgb_matrix_sethsv_noeeprom(110, 255, 200);
+        rgb_matrix_set_speed_noeeprom(50);
         break;
-    case THEME_MATRIX:
+    case THEME_STARFIELD:
         rgb_matrix_enable_noeeprom();
-        rgb_matrix_mode_noeeprom(RGB_MATRIX_DIGITAL_RAIN);
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_STARLIGHT_SMOOTH);
+        rgb_matrix_sethsv_noeeprom(170, 180, 180);  // cool blue-white twinkle
+        rgb_matrix_set_speed_noeeprom(70);
         break;
-    case THEME_SYNTHWAVE:
+    case THEME_CYBERPUNK:
+        // Magenta base, neon crosshairs fire from each keypress
         rgb_matrix_enable_noeeprom();
-        rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
-        rgb_matrix_sethsv_noeeprom(213, 255, 210);  // magenta/pink
-        rgb_matrix_set_speed_noeeprom(100);
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_SOLID_REACTIVE_MULTICROSS);
+        rgb_matrix_sethsv_noeeprom(213, 255, 230);
+        rgb_matrix_set_speed_noeeprom(180);
         break;
     case THEME_FOREST:
         rgb_matrix_enable_noeeprom();
@@ -163,9 +169,12 @@ static void apply_theme(void) {
         rgb_matrix_mode_noeeprom(RGB_MATRIX_CYCLE_PINWHEEL);
         rgb_matrix_set_speed_noeeprom(200);
         break;
-    case THEME_HEATMAP:
+    case THEME_SPLASH:
+        // Lavender ripple expands outward from each keypress
         rgb_matrix_enable_noeeprom();
-        rgb_matrix_mode_noeeprom(RGB_MATRIX_TYPING_HEATMAP);
+        rgb_matrix_mode_noeeprom(RGB_MATRIX_SOLID_MULTISPLASH);
+        rgb_matrix_sethsv_noeeprom(200, 220, 220);
+        rgb_matrix_set_speed_noeeprom(150);
         break;
     case THEME_OFF:
         rgb_matrix_disable_noeeprom();
@@ -180,7 +189,7 @@ void keyboard_post_init_user(void) {
         user_config.os_mode = OS_LINUX;
     }
     if (user_config.theme_mode >= THEME_COUNT) {
-        user_config.theme_mode = THEME_RAINBOW;
+        user_config.theme_mode = THEME_BEACH;
     }
     apply_os_mode();
     apply_theme();
@@ -349,14 +358,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         return false;
 
-    case CU_TH_RB: if (record->event.pressed) set_theme(THEME_RAINBOW);   return false;
+    case CU_TH_BC: if (record->event.pressed) set_theme(THEME_BEACH);     return false;
     case CU_TH_OC: if (record->event.pressed) set_theme(THEME_OCEAN);     return false;
-    case CU_TH_FI: if (record->event.pressed) set_theme(THEME_FIRE);      return false;
-    case CU_TH_MX: if (record->event.pressed) set_theme(THEME_MATRIX);    return false;
-    case CU_TH_SW: if (record->event.pressed) set_theme(THEME_SYNTHWAVE); return false;
+    case CU_TH_AU: if (record->event.pressed) set_theme(THEME_AURORA);    return false;
+    case CU_TH_SF: if (record->event.pressed) set_theme(THEME_STARFIELD); return false;
+    case CU_TH_CP: if (record->event.pressed) set_theme(THEME_CYBERPUNK); return false;
     case CU_TH_FO: if (record->event.pressed) set_theme(THEME_FOREST);    return false;
     case CU_TH_PT: if (record->event.pressed) set_theme(THEME_PARTY);     return false;
-    case CU_TH_HM: if (record->event.pressed) set_theme(THEME_HEATMAP);   return false;
+    case CU_TH_SP: if (record->event.pressed) set_theme(THEME_SPLASH);    return false;
     case CU_TH_OF: if (record->event.pressed) set_theme(THEME_OFF);       return false;
     case CU_TH_NX: if (record->event.pressed) cycle_theme();              return false;
     }
@@ -396,12 +405,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 ),
 
 // Nav/Function Layer
-// Theme row (Q..P positions): Rainbow, Ocean, Fire, Matrix, Synthwave |
-//                             Forest, Party, Heatmap, Next, Off
+// Theme row (Q..P positions): Beach, Ocean, Aurora, Star, Cyber |
+//                             Forest, Party, Splash, Next, Off
 // ┌───────┬─────┬─────┬─────┬─────┬─────┬─────┐   ┌─────┬─────┬─────┬─────┬─────┬─────┬───────┐
 // │ Lock  │ F1  │ F2  │ F3  │ F4  │ F5  │  =  │   │  -  │ F6  │ F7  │ F8  │ F9  │ F10 │  Del  │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
-// │       │Rnbw │Ocean│Fire │Mtrx │Synth│  [  │   │  ]  │Frst │Prty │Heat │Next │Off  │       │
+// │       │Beach│Ocean│Auror│Star │Cyber│  [  │   │  ]  │Frst │Prty │Splsh│Next │Off  │       │
 // ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
 // │       │     │Snap │     │     │     │  `  │   │Enter│  ←  │  ↓  │  ↑  │  →  │     │       │
 // ├───────┼─────┼─────┼─────┼─────┼─────┘─────┘   └─────└─────┼─────┼─────┼─────┼─────┼───────┤
@@ -414,7 +423,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 //                             └─────┴─────┴─────┘ └─────┴─────┴─────┘
 [_NAV] = LAYOUT(
     CU_LOCK, KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,   KC_EQL,       KC_MINS, KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,  KC_DEL,
-    _______, CU_TH_RB,CU_TH_OC,CU_TH_FI,CU_TH_MX,CU_TH_SW,KC_LBRC,      KC_RBRC, CU_TH_FO,CU_TH_PT,CU_TH_HM,CU_TH_NX,CU_TH_OF,_______,
+    _______, CU_TH_BC,CU_TH_OC,CU_TH_AU,CU_TH_SF,CU_TH_CP,KC_LBRC,      KC_RBRC, CU_TH_FO,CU_TH_PT,CU_TH_SP,CU_TH_NX,CU_TH_OF,_______,
     _______, _______, CU_SNAP, _______, _______, _______, KC_GRV,       KC_ENT,  KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT, _______, _______,
     _______, _______, _______, _______, _______, _______,                        _______, _______, _______, _______, _______, _______,
     CU_WLFT, CU_WUP,  CU_WRGT, KC_HOME, KC_END,           _______,     _______,          _______, KC_PGDN, KC_PGUP, _______, _______,

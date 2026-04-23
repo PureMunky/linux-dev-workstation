@@ -10,11 +10,14 @@
 // Combo term: window for pressing combo keys simultaneously
 #define COMBO_TERM 50
 
+// Required so reactive effects (MULTICROSS, MULTISPLASH) compile in
+#define RGB_MATRIX_KEYPRESSES
+
 // RGB matrix effects used by the theme system (see keymap.c)
-#define ENABLE_RGB_MATRIX_RAINBOW_MOVING_CHEVRON
-#define ENABLE_RGB_MATRIX_BREATHING
-#define ENABLE_RGB_MATRIX_DIGITAL_RAIN
-#define ENABLE_RGB_MATRIX_CYCLE_PINWHEEL
-#define ENABLE_RGB_MATRIX_PIXEL_FLOW
-#define ENABLE_RGB_MATRIX_TYPING_HEATMAP
-#define ENABLE_RGB_MATRIX_SOLID_COLOR
+#define ENABLE_RGB_MATRIX_BREATHING                  // Ocean, Forest
+#define ENABLE_RGB_MATRIX_CYCLE_PINWHEEL             // Party
+#define ENABLE_RGB_MATRIX_BAND_VAL                   // Beach
+#define ENABLE_RGB_MATRIX_HUE_BREATHING              // Aurora
+#define ENABLE_RGB_MATRIX_STARLIGHT_SMOOTH           // Starfield
+#define ENABLE_RGB_MATRIX_SOLID_REACTIVE_MULTICROSS  // Cyberpunk
+#define ENABLE_RGB_MATRIX_SOLID_MULTISPLASH          // Splash
