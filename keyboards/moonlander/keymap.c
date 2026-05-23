@@ -6,7 +6,10 @@
 // - macOS: Cmd on home row (via Ctrl/GUI swap), Alt+Ctrl for window snapping
 //
 // Layer 0: Base QWERTY
-// Layer 1: Navigation, F-keys, OS-aware shortcuts, RGB theme selection
+// Layer 1: Navigation, F-keys, window snapping, RGB theme selection
+// Layer 2: Shortcuts — OS-aware edit ops (undo/redo/cut/copy/paste/find/save),
+//          word-level navigation and deletion, line/page navigation.
+//          Activated by holding the right-thumb Del key (LT(_SHORTCUTS, KC_DEL)).
 //
 // RGB themes (Layer 1, Q-row): Beach, Ocean, Aurora, Starfield, Cyberpunk,
 // Forest, Party, Splash, plus cycle-next and off. Selection persists to EEPROM.
@@ -59,6 +62,7 @@ enum custom_keycodes {
     CU_OSTOGG = ZSA_SAFE_RANGE,  // OS mode toggle (fired by combo)
     CU_SNAP,               // Screenshot (OS-aware)
     CU_TERM,               // Terminal toggle (OS-aware)
+    CU_LCHR,               // App launcher: Cmd+Space (Mac Spotlight) / Super tap (GNOME)
     CU_WLFT,               // Window snap left (OS-aware)
     CU_WRGT,               // Window snap right (OS-aware)
     CU_WUP,                // Window snap up / maximize (OS-aware)
@@ -73,14 +77,30 @@ enum custom_keycodes {
     CU_TH_SP,              // Theme: Splash
     CU_TH_NX,              // Theme: cycle next
     CU_TH_OF,              // Theme: Off
+    // Shortcuts layer (OS-aware)
+    CU_UNDO,               // Cmd/Ctrl + Z
+    CU_REDO,               // Cmd/Ctrl + Shift + Z
+    CU_CUT,                // Cmd/Ctrl + X
+    CU_COPY,               // Cmd/Ctrl + C
+    CU_PASTE,              // Cmd/Ctrl + V
+    CU_SALL,               // Cmd/Ctrl + A (select all)
+    CU_SAVE,               // Cmd/Ctrl + S
+    CU_FIND,               // Cmd/Ctrl + F
+    CU_WLF,                // Word left:  Alt/Ctrl + Left
+    CU_WRT,                // Word right: Alt/Ctrl + Right
+    CU_DWBK,               // Delete word back:    Alt/Ctrl + Backspace
+    CU_DWFW,               // Delete word forward: Alt/Ctrl + Delete
+    CU_HOME,               // Line home:  Cmd+Left on Mac, Home elsewhere
+    CU_END,                // Line end:   Cmd+Right on Mac, End elsewhere
 };
 
 // ---------------------------------------------------------------------------
 // Layers
 // ---------------------------------------------------------------------------
 enum layers {
-    _BASE = 0,
-    _NAV  = 1,
+    _BASE      = 0,
+    _NAV       = 1,
+    _SHORTCUTS = 2,
 };
 
 // ---------------------------------------------------------------------------
@@ -221,6 +241,40 @@ static void cycle_theme(void) {
 }
 
 // ---------------------------------------------------------------------------
+// OS-aware modifier helpers (used by the shortcuts layer)
+// ---------------------------------------------------------------------------
+// App shortcut modifier: Cmd on Mac, Ctrl on Linux/Windows.
+static uint16_t primary_mod(void) {
+    return (user_config.os_mode == OS_MAC) ? KC_LGUI : KC_LCTL;
+}
+// Word-jump / word-delete modifier: Option on Mac, Ctrl on Linux/Windows.
+static uint16_t word_mod(void) {
+    return (user_config.os_mode == OS_MAC) ? KC_LALT : KC_LCTL;
+}
+
+static void tap_with_mod(uint16_t mod, uint16_t kc, bool pressed) {
+    if (pressed) {
+        register_code(mod);
+        register_code(kc);
+    } else {
+        unregister_code(kc);
+        unregister_code(mod);
+    }
+}
+
+static void tap_with_mods2(uint16_t mod1, uint16_t mod2, uint16_t kc, bool pressed) {
+    if (pressed) {
+        register_code(mod1);
+        register_code(mod2);
+        register_code(kc);
+    } else {
+        unregister_code(kc);
+        unregister_code(mod2);
+        unregister_code(mod1);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Custom keycode handling
 // ---------------------------------------------------------------------------
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
@@ -268,6 +322,24 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 unregister_code(KC_LGUI);
             } else {
                 unregister_code(KC_LCTL);
+            }
+        }
+        return false;
+
+    case CU_LCHR:
+        // Linux/GNOME: tap Super alone to trigger overlay-key (Activities)
+        // Mac:         Cmd+Space for Spotlight
+        if (record->event.pressed) {
+            if (user_config.os_mode == OS_MAC) {
+                register_code(KC_LGUI);
+                register_code(KC_SPC);
+            } else {
+                tap_code(KC_LGUI);
+            }
+        } else {
+            if (user_config.os_mode == OS_MAC) {
+                unregister_code(KC_SPC);
+                unregister_code(KC_LGUI);
             }
         }
         return false;
@@ -368,6 +440,39 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     case CU_TH_SP: if (record->event.pressed) set_theme(THEME_SPLASH);    return false;
     case CU_TH_OF: if (record->event.pressed) set_theme(THEME_OFF);       return false;
     case CU_TH_NX: if (record->event.pressed) cycle_theme();              return false;
+
+    // -- Shortcuts layer ----------------------------------------------------
+    case CU_UNDO:  tap_with_mod (primary_mod(),         KC_Z,    record->event.pressed); return false;
+    case CU_REDO:  tap_with_mods2(primary_mod(), KC_LSFT, KC_Z,   record->event.pressed); return false;
+    case CU_CUT:   tap_with_mod (primary_mod(),         KC_X,    record->event.pressed); return false;
+    case CU_COPY:  tap_with_mod (primary_mod(),         KC_C,    record->event.pressed); return false;
+    case CU_PASTE: tap_with_mod (primary_mod(),         KC_V,    record->event.pressed); return false;
+    case CU_SALL:  tap_with_mod (primary_mod(),         KC_A,    record->event.pressed); return false;
+    case CU_SAVE:  tap_with_mod (primary_mod(),         KC_S,    record->event.pressed); return false;
+    case CU_FIND:  tap_with_mod (primary_mod(),         KC_F,    record->event.pressed); return false;
+    case CU_WLF:   tap_with_mod (word_mod(),            KC_LEFT, record->event.pressed); return false;
+    case CU_WRT:   tap_with_mod (word_mod(),            KC_RGHT, record->event.pressed); return false;
+    case CU_DWBK:  tap_with_mod (word_mod(),            KC_BSPC, record->event.pressed); return false;
+    case CU_DWFW:  tap_with_mod (word_mod(),            KC_DEL,  record->event.pressed); return false;
+    case CU_HOME:
+        // Mac line-home is Cmd+Left; Linux/Win Home jumps to line start natively.
+        if (user_config.os_mode == OS_MAC) {
+            tap_with_mod(KC_LGUI, KC_LEFT, record->event.pressed);
+        } else if (record->event.pressed) {
+            register_code(KC_HOME);
+        } else {
+            unregister_code(KC_HOME);
+        }
+        return false;
+    case CU_END:
+        if (user_config.os_mode == OS_MAC) {
+            tap_with_mod(KC_LGUI, KC_RGHT, record->event.pressed);
+        } else if (record->event.pressed) {
+            register_code(KC_END);
+        } else {
+            unregister_code(KC_END);
+        }
+        return false;
     }
 
     return true;
@@ -401,7 +506,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     MO(_NAV),KC_A,    KC_S,    KC_D,    KC_F,    KC_G,    C(KC_V),      KC_VOLD, KC_H,    KC_J,    KC_K,    KC_L,    KC_SCLN, KC_QUOT,
     KC_LSFT, KC_Z,    KC_X,    KC_C,    KC_V,    KC_B,                           KC_N,    KC_M,    KC_COMM, KC_DOT,  KC_SLSH, KC_EQL,
     KC_RCTL, KC_RALT, KC_RGUI, KC_F5,   KC_F12,           KC_ESC,     MO(_NAV),          KC_RALT, KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT,
-                                         KC_LCTL, KC_LALT, KC_ENT,      KC_BSPC, KC_DEL,  KC_SPC
+                                         KC_LCTL, KC_LALT, KC_ENT,      KC_BSPC, LT(_SHORTCUTS, KC_DEL), KC_SPC
 ),
 
 // Nav/Function Layer
@@ -419,7 +524,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 // │ WinL  │WinUp│WinR │Home │ End │                                      │     │PgDn │PgUp │     │       │
 // └───────┴─────┴─────┴─────┴─────┘                                       └─────┴─────┴─────┴─────┴───────┘
 //                             ┌─────┬─────┬─────┐ ┌─────┬─────┬─────┐
-//                             │     │     │     │ │Term │     │     │
+//                             │     │     │Lchr │ │Term │     │     │
 //                             └─────┴─────┴─────┘ └─────┴─────┴─────┘
 [_NAV] = LAYOUT(
     CU_LOCK, KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,   KC_EQL,       KC_MINS, KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,  KC_DEL,
@@ -427,7 +532,33 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     _______, _______, CU_SNAP, _______, _______, _______, KC_GRV,       KC_ENT,  KC_LEFT, KC_DOWN, KC_UP,   KC_RGHT, _______, _______,
     _______, _______, _______, _______, _______, _______,                        _______, _______, _______, _______, _______, _______,
     CU_WLFT, CU_WUP,  CU_WRGT, KC_HOME, KC_END,           _______,     _______,          _______, KC_PGDN, KC_PGUP, _______, _______,
-                                         _______, _______, _______,      CU_TERM, _______, _______
+                                         _______, _______, CU_LCHR,     CU_TERM, _______, _______
+),
+
+// Shortcuts Layer (hold right-thumb Del — tap = Del, hold = this layer)
+// Edit ops on Z/X/C/V/B preserve Ctrl-row muscle memory; nav block on right.
+// All app shortcuts are OS-aware (Cmd on Mac, Ctrl on Linux/Win).
+// ┌───────┬─────┬─────┬─────┬─────┬─────┬─────┐   ┌─────┬─────┬─────┬─────┬─────┬─────┬───────┐
+// │   ·   │  ·  │  ·  │  ·  │  ·  │  ·  │  ·  │   │  ·  │  ·  │  ·  │  ·  │  ·  │  ·  │   ·   │
+// ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
+// │   ·   │  ·  │  ·  │  ·  │  ·  │  ·  │  ·  │   │  ·  │  ·  │PgUp │ Up  │PgDn │  ·  │   ·   │
+// ├───────┼─────┼─────┼─────┼─────┼─────┼─────┤   ├─────┼─────┼─────┼─────┼─────┼─────┼───────┤
+// │   ·   │SAll │Save │  ·  │Find │  ·  │  ·  │   │  ·  │Home │  ←  │  ↓  │  →  │ End │   ·   │
+// ├───────┼─────┼─────┼─────┼─────┼─────┘─────┘   └─────└─────┼─────┼─────┼─────┼─────┼───────┤
+// │ Shift │Undo │ Cut │Copy │Past │Redo │                     │DWb  │WordL│WordR│DWf  │  ·  │   ·   │
+// ├───────┼─────┼─────┼─────┼─────┘─────┘                     └─────└─────┼─────┼─────┼─────┼───────┤
+// │   ·   │  ·  │  ·  │  ·  │  ·  │      ·                          ·     │  ·  │  ·  │  ·  │  ·  │   ·   │
+// └───────┴─────┴─────┴─────┴─────┘                                       └─────┴─────┴─────┴─────┴───────┘
+//                             ┌─────┬─────┬─────┐ ┌─────┬─────┬─────┐
+//                             │  ·  │  ·  │  ·  │ │  ·  │ Del │  ·  │
+//                             └─────┴─────┴─────┘ └─────┴─────┴─────┘
+[_SHORTCUTS] = LAYOUT(
+    _______, _______, _______, _______, _______, _______, _______,      _______, _______, _______, _______, _______, _______, _______,
+    _______, _______, _______, _______, _______, _______, _______,      _______, _______, KC_PGUP, KC_UP,   KC_PGDN, _______, _______,
+    _______, CU_SALL, CU_SAVE, _______, CU_FIND, _______, _______,      _______, CU_HOME, KC_LEFT, KC_DOWN, KC_RGHT, CU_END,  _______,
+    KC_LSFT, CU_UNDO, CU_CUT,  CU_COPY, CU_PASTE,CU_REDO,                        CU_DWBK, CU_WLF,  CU_WRT,  CU_DWFW, _______, _______,
+    _______, _______, _______, _______, _______,          _______,     _______,          _______, _______, _______, _______, _______,
+                                         _______, _______, _______,      _______, _______, _______
 ),
 
 };

@@ -55,10 +55,15 @@ declare -A KC_MAP=(
     [KC_F9]="F9"   [KC_F10]="F10" [KC_F11]="F11"  [KC_F12]="F12"
     # Custom keycodes
     [CU_SNAP]="Snap"   [CU_TERM]="Term"  [CU_WLFT]="WinL"  [CU_WRGT]="WinR"  [CU_WUP]="WinUp"
-    [CU_OSTOGG]="OSTog" [CU_LOCK]="Lock"
+    [CU_OSTOGG]="OSTog" [CU_LOCK]="Lock"  [CU_LCHR]="Lchr"
     # Theme selectors (Layer 1)
     [CU_TH_BC]="Beach" [CU_TH_OC]="Ocean" [CU_TH_AU]="Auror" [CU_TH_SF]="Star" [CU_TH_CP]="Cyber"
     [CU_TH_FO]="Frst"  [CU_TH_PT]="Prty"  [CU_TH_SP]="Splsh" [CU_TH_NX]="Next" [CU_TH_OF]="Off"
+    # Shortcuts layer (Layer 2) — OS-aware
+    [CU_UNDO]="Undo"   [CU_REDO]="Redo"  [CU_CUT]="Cut"    [CU_COPY]="Copy"  [CU_PASTE]="Paste"
+    [CU_SALL]="SAll"   [CU_SAVE]="Save"  [CU_FIND]="Find"
+    [CU_WLF]="WrdL"    [CU_WRT]="WrdR"   [CU_DWBK]="DWb"   [CU_DWFW]="DWf"
+    [CU_HOME]="Home"   [CU_END]="End"
     # Transparent / blocked
     [_______]="·"      [XXXXXXX]=""
 )
@@ -97,6 +102,14 @@ extract_layer_keys() {
             KC_MAP["$replacement"]="C+${inner_label}"
             cleaned="${cleaned/C(${inner})/$replacement}"
         done
+        # Protect LT(layer, kc) — replace inner comma with | so the comma-split
+        # below doesn't tear it apart.
+        while [[ "$cleaned" =~ LT\(([A-Z_0-9]+),[[:space:]]*([A-Z_0-9]+)\) ]]; do
+            local lay="${BASH_REMATCH[1]}"
+            local kc="${BASH_REMATCH[2]}"
+            cleaned="${cleaned//LT(${lay}, ${kc})/LT(${lay}|${kc})}"
+            cleaned="${cleaned//LT(${lay},${kc})/LT(${lay}|${kc})}"
+        done
         cleaned="${cleaned//,/ }"
         for token in $cleaned; do
             token="$(echo "$token" | xargs)"
@@ -105,10 +118,26 @@ extract_layer_keys() {
             if [[ "$token" =~ ^MO\((.+)\)$ ]]; then
                 local layer_num="${BASH_REMATCH[1]}"
                 case "$layer_num" in
-                    _NAV|1)  keys+=("Nav")  ;;
-                    _BASE|0) keys+=("Base") ;;
-                    *)       keys+=("L${layer_num}") ;;
+                    _NAV|1)       keys+=("Nav")  ;;
+                    _SHORTCUTS|2) keys+=("Sho")  ;;
+                    _BASE|0)      keys+=("Base") ;;
+                    *)            keys+=("L${layer_num}") ;;
                 esac
+                continue
+            fi
+            # Handle LT(layer, kc) — tap-hold; show "kc/Layer"
+            if [[ "$token" =~ ^LT\((.+)\|(.+)\)$ ]]; then
+                local layer_num="${BASH_REMATCH[1]}"
+                local kc="${BASH_REMATCH[2]}"
+                local kc_label="${KC_MAP[$kc]:-${kc#KC_}}"
+                local layer_label
+                case "$layer_num" in
+                    _NAV|1)       layer_label="Nav" ;;
+                    _SHORTCUTS|2) layer_label="Sho" ;;
+                    _BASE|0)      layer_label="Base" ;;
+                    *)            layer_label="L${layer_num}" ;;
+                esac
+                keys+=("${kc_label}/${layer_label}")
                 continue
             fi
             # Look up in map
@@ -257,6 +286,15 @@ echo "  · = transparent, falls through to base layer"
 echo ""
 extract_layer_keys '\[_NAV\]' | render_layer
 
+# --- Layer 2: Shortcuts ---
+echo ""
+echo "$DIV"
+echo ""
+echo "${BOLD}  LAYER 2 — SHORTCUTS  (hold right-thumb Del; tap = Del)${RESET}"
+echo "  All shortcuts are OS-aware (Cmd on Mac, Ctrl on Linux/Win)."
+echo ""
+extract_layer_keys '\[_SHORTCUTS\]' | render_layer
+
 # --- OS mode reference ---
 echo ""
 echo "$DIV"
@@ -273,6 +311,7 @@ echo "  │ Snap left        │ Super+Left            │ Alt+Ctrl+Left        
 echo "  │ Snap right       │ Super+Right           │ Alt+Ctrl+Right       │"
 echo "  │ Screenshot       │ PrintScreen           │ Cmd+Shift+4          │"
 echo "  │ Terminal toggle  │ Ctrl+\`               │ Cmd+\`               │"
+echo "  │ App launcher     │ Super (Activities)    │ Cmd+Space (Spotlight)│"
 echo "  └──────────────────┴──────────────────────┴──────────────────────┘"
 echo ""
 echo "  Ctrl/Cmd swap is automatic — physical Ctrl key sends Cmd in Mac mode."
