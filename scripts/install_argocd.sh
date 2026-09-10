@@ -26,16 +26,10 @@ else
   exit 1
 fi
 
-echo "[+] Installing ArgoCD CLI."
+echo "[+] Installing/updating ArgoCD CLI."
 
-if ! command -v argocd &> /dev/null; then
-  echo "ArgoCD CLI not found. Installing..."
-  curl -sSL -o argocd-binary "https://github.com/argoproj/argo-cd/releases/latest/download/argocd-${OS_LOWER}-${ARCH_SUFFIX}"
-  chmod +x argocd-binary
-  sudo mv argocd-binary /usr/local/bin/argocd
-else
-  echo "ArgoCD CLI already installed."
-  exit 0
-fi
+curl -sSL -o argocd-binary "https://github.com/argoproj/argo-cd/releases/latest/download/argocd-${OS_LOWER}-${ARCH_SUFFIX}"
+chmod +x argocd-binary
+sudo mv argocd-binary /usr/local/bin/argocd
 
 echo "[✔] ArgoCD CLI installed."
