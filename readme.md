@@ -66,3 +66,9 @@ Package definitions are maintained in `package_lists/`:
 - **Git config**: Edit `scripts/setup_git.sh` to change user name/email
 - **VS Code extensions**: Modify `scripts/setup_vscode.sh` to add/remove extensions
 - **Packages**: Add/remove packages in the `package_lists/` files
+
+## Documentation
+
+- [Repository Overview](docs/REPO_OVERVIEW.md) - what each directory, script, dotfile, and tool does
+- [Keyboard Layouts](docs/KEYBOARD_LAYOUTS.md) - Moonlander layers, OS-mode toggle, RGB themes, WezTerm keys, Stream Deck grids
+- [Automatic Updates](docs/AUTO_UPDATES.md) - how unattended system updates are configured
