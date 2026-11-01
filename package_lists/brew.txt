@@ -9,3 +9,4 @@ jq
 htop
 go
 yamllint
+gh

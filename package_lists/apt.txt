@@ -12,3 +12,4 @@ software-properties-common
 jq
 htop
 golang-go
+gh
